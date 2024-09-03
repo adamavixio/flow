@@ -5,9 +5,7 @@ pub const Tag = enum {
     minus,
     asterisk,
     forward_slash,
-
     int,
-
     invalid,
     eof,
 };
@@ -15,48 +13,48 @@ pub const Tag = enum {
 pub const Token = struct {
     tag: Tag,
     lexeme: []const u8,
+
+    pub fn operator(lexeme: []const u8) Token {
+        if (lexeme.len != 1) {
+            return .{
+                .tag = .invalid,
+                .lexeme = lexeme,
+            };
+        }
+
+        return .{
+            .tag = switch (lexeme[0]) {
+                '+' => .plus,
+                '-' => .minus,
+                '*' => .asterisk,
+                '/' => .forward_slash,
+                else => .invalid,
+            },
+            .lexeme = lexeme,
+        };
+    }
+
+    pub fn expression(tag: Tag, lexeme: []const u8) Token {
+        if (lexeme.len == 0 or tag != .int) {
+            return .{
+                .tag = .invalid,
+                .lexeme = lexeme,
+            };
+        }
+
+        return .{
+            .tag = tag,
+            .lexeme = lexeme,
+        };
+    }
+
+    pub fn special(tag: Tag, lexeme: []const u8) Token {
+        return .{
+            .tag = tag,
+            .lexeme = lexeme,
+        };
+    }
 };
-
-pub fn operator(lexeme: []const u8) Token {
-    if (lexeme.len != 1) {
-        return .{
-            .tag = .invalid,
-            .lexeme = lexeme,
-        };
-    }
-
-    return .{
-        .tag = switch (lexeme[0]) {
-            '+' => .plus,
-            '-' => .minus,
-            '*' => .asterisk,
-            '/' => .forward_slash,
-            else => .invalid,
-        },
-        .lexeme = lexeme,
-    };
-}
-
-pub fn expression(tag: Tag, lexeme: []const u8) Token {
-    if (lexeme.len == 0 or tag != .int) {
-        return .{
-            .tag = .invalid,
-            .lexeme = lexeme,
-        };
-    }
-
-    return .{
-        .tag = tag,
-        .lexeme = lexeme,
-    };
-}
-
-pub fn special(tag: Tag, lexeme: []const u8) Token {
-    return .{
-        .tag = tag,
-        .lexeme = lexeme,
-    };
-}
 
 test "token" {
     const Case = struct { tag: Tag, lexeme: []const u8 };
@@ -73,7 +71,7 @@ test "token" {
     };
 
     for (operators) |exp| {
-        const got = operator(exp.lexeme);
+        const got = Token.operator(exp.lexeme);
         try std.testing.expectEqual(exp.tag, got.tag);
         try std.testing.expectEqualStrings(exp.lexeme, got.lexeme);
     }
@@ -90,7 +88,7 @@ test "token" {
     };
 
     for (expressions) |exp| {
-        const got = expression(exp.tag, exp.lexeme);
+        const got = Token.expression(exp.tag, exp.lexeme);
         try std.testing.expectEqual(exp.tag, got.tag);
         try std.testing.expectEqualStrings(exp.lexeme, got.lexeme);
     }
@@ -108,7 +106,7 @@ test "token" {
     };
 
     for (specials) |exp| {
-        const got = special(exp.tag, exp.lexeme);
+        const got = Token.special(exp.tag, exp.lexeme);
         try std.testing.expectEqual(exp.tag, got.tag);
         try std.testing.expectEqualStrings(exp.lexeme, got.lexeme);
     }

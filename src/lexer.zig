@@ -1,5 +1,7 @@
 const std = @import("std");
-const token = @import("token.zig");
+
+const Tag = @import("token.zig").Tag;
+const Token = @import("token.zig").Token;
 
 pub const State = enum {
     sof,
@@ -38,14 +40,13 @@ pub const Lexer = struct {
     state: State = .sof,
     location: Location = Location{},
 
-    pub fn next(self: *Lexer) token.Token {
-        // std.debug.print("before\n", .{});
-        // std.debug.print("location: {any}\n", .{self.location});
-        // std.debug.print("state: {any}\n", .{self.state});
+    pub fn init(input: []const u8) Lexer {
+        return Lexer{ .input = input };
+    }
+
+    pub fn next(self: *Lexer) Token {
         while (self.location.right < self.input.len and self.state != .eof) {
             const byte = self.input[self.location.right];
-            std.debug.print("state: {any}\n", .{self.state});
-            std.debug.print("location: {any}\n", .{self.location});
             switch (self.state) {
                 .sof => switch (byte) {
                     '\n' => {
@@ -108,9 +109,6 @@ pub const Lexer = struct {
                     break;
                 },
             }
-            // std.debug.print("after\n", .{});
-            // std.debug.print("location: {any}\n", .{self.location});
-            // std.debug.print("state: {any}\n\n", .{self.state});
         }
 
         const lexeme = self.read();
@@ -119,27 +117,27 @@ pub const Lexer = struct {
         return switch (self.state) {
             .operator => {
                 self.state = .operator_assert;
-                return token.operator(
+                return Token.operator(
                     lexeme,
                 );
             },
             .int => {
                 self.state = .sof;
-                return token.expression(
-                    token.Tag.int,
+                return Token.expression(
+                    Tag.int,
                     lexeme,
                 );
             },
             .invalid => {
                 self.state = .sof;
-                return token.special(
-                    token.Tag.invalid,
+                return Token.special(
+                    Tag.invalid,
                     lexeme,
                 );
             },
             else => {
-                return token.special(
-                    token.Tag.eof,
+                return Token.special(
+                    Tag.eof,
                     lexeme,
                 );
             },
@@ -151,14 +149,10 @@ pub const Lexer = struct {
     }
 };
 
-pub fn init(input: []const u8) Lexer {
-    return Lexer{ .input = input };
-}
-
 test "lexer" {
-    var lexer = init("0 + 1 -2 * 123 $ /+");
+    var lexer = Lexer.init("0 + 1 -2 * 123 $ /+");
 
-    const Case = struct { tag: token.Tag, lexeme: []const u8 };
+    const Case = struct { tag: Tag, lexeme: []const u8 };
     const cases = [_]Case{
         .{ .tag = .int, .lexeme = "0" },
         .{ .tag = .plus, .lexeme = "+" },
