@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub usingnamespace @import("stream.zig");
+pub usingnamespace @import("prime.zig");
 
 test {
     std.testing.refAllDecls(@This());

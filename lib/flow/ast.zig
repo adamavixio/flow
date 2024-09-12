@@ -1,5 +1,16 @@
 const std = @import("std");
 
+// file : path "ests" <> path "edsfs" -> lines -> sort | deduplicate
+
+pub const AST = struct {
+    pub const Node = struct {
+        pub const Type = enum {
+            string,
+            object,
+        };
+    };
+};
+
 pub const NodeType = enum {
     BinaryOp,
     IntLiteral,
