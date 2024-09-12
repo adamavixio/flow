@@ -16,6 +16,7 @@ pub const Lexeme = union(Tag) {
     special: Special,
 
     pub fn init(string: []const u8) ?Lexeme {
+        const map = 
         inline for (comptime std.meta.tags(Keyword)) |tag| {
             if (std.mem.eql(u8, string, @tagName(tag))) {
                 return .{ .keyword = tag };

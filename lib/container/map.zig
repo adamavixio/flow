@@ -16,7 +16,7 @@ pub fn Map(comptime Key: type, comptime Value: type) type {
         pub fn initComptime(comptime entries: []const Entry) Self {
             const k, const prime = comptime blk: {
                 for (1..1e3) |term| {
-                    search: for (1..prime) |k| {
+                    search: for (1..math.generatePri) |k| {
                         var used = [_]bool{false} ** entries.len;
                         for (entries) |entry| {
                             const i = ((k * hash(entry.key)) % prime) % entries.len;
