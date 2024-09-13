@@ -4,27 +4,39 @@ pub fn build(b: *std.Build) void {
     const config = Config{
         .default = .{
             .modules = &.{
-                .{ .name = "flow", .path = "lib/flow/root.zig" },
-                .{ .name = "container", .path = "lib/container/root.zig" },
-                .{ .name = "math", .path = "lib/math/root.zig" },
+                .{
+                    .name = "flow",
+                    .path = "lib/flow/root.zig",
+                },
+                .{
+                    .name = "container",
+                    .path = "lib/container/root.zig",
+                },
+                .{
+                    .name = "math",
+                    .path = "lib/math/root.zig",
+                },
             },
             .executables = &.{
-                .{ .name = "flow", .path = "src/main.zig" },
+                .{
+                    .name = "flow",
+                    .path = "src/main.zig",
+                },
             },
         },
     };
 
     const builder = Builder(config).init(b);
-    const modules = Modules(config).init(builder);
-    std.debug.print("{}", .{modules.get(.flow)});
-    // const executables = Executables(config).init(builder);
-    // modules.link(.flow, .{ .module = .container });
-    // modules.link(.container, .{ .module = .math });
-    // executables.link(.flow, .{ .module = .flow });
 
-    // const modules = Modules(config).init();
-    // const executables = Executables(config).init(modules.);
-    // Tests(config).init(executables, modules);
+    const modules = Modules(config).init(builder);
+    modules.link(.flow, &.{.{ .module = .container }});
+    modules.link(.container, &.{.{ .module = .math }});
+
+    const executables = Executables(config).init(builder);
+    executables.link(.flow, modules, &.{.{ .module = .flow }});
+
+    const artifacts = Artifacts(config).init(builder, executables);
+    artifacts.installExecutables(&.{.flow});
 }
 
 const Mode = enum {
@@ -67,25 +79,40 @@ inline fn Modules(comptime config: Config) type {
     return switch (config) {
         inline .default => |d| struct {
             const Self = @This();
-            const Tag = Generate.Enum(d.modules).Map(.name);
 
-            builder: Builder(config),
-            modules: []?*std.Build.Module = undefined,
+            const Tag = Generate.Enum(d.modules).Map(.name);
+            const Dep = struct { name: ?[]const u8 = null, module: Tag };
+
+            modules: [d.modules.len]*std.Build.Module,
 
             fn init(builder: Builder(config)) Self {
-                return .{ .builder = builder };
+                return .{
+                    .modules = blk: {
+                        var modules: [d.modules.len]*std.Build.Module = undefined;
+                        for (d.modules, 0..) |m, i| {
+                            modules[i] = builder.build.addModule(m.name, .{
+                                .root_source_file = builder.build.path(m.path),
+                                .target = builder.target,
+                                .optimize = builder.optimize,
+                            });
+                        }
+                        break :blk modules;
+                    },
+                };
             }
 
-            pub fn get(self: Self, tag: Tag) *std.Build.Module {
-                const i = @intFromEnum(tag);
-                if (self.modules[i] == null) {
-                    self.modules[i] = self.builder.build.addModule(d.modules[i].name, .{
-                        .root_source_file = self.builder.build.path(d.modules[i].path),
-                        .target = self.builder.target,
-                        .optimize = self.builder.optimize,
-                    });
-                }
-                return self.modules[i].?;
+            fn get(self: Self, tag: Tag) *std.Build.Module {
+                return switch (tag) {
+                    inline else => |t| self.modules[@intFromEnum(t)],
+                };
+            }
+
+            fn link(self: Self, module: Tag, targets: []const Dep) void {
+                var source = self.get(module);
+                for (targets) |target| source.addImport(
+                    target.name orelse @tagName(target.module),
+                    self.get(target.module),
+                );
             }
         },
     };
@@ -95,25 +122,65 @@ inline fn Executables(comptime config: Config) type {
     return switch (config) {
         inline .default => |d| struct {
             const Self = @This();
-            const Tag = Generate.Enum(d.modules).Map(.name);
 
-            builder: Builder(config),
-            executables: []?*std.Build.Compile.Step = undefined,
+            const Tag = Generate.Enum(d.executables).Map(.name);
+            const Dep = struct { name: ?[]const u8 = null, module: Modules(config).Tag };
+
+            executables: [d.executables.len]*std.Build.Step.Compile,
 
             fn init(builder: Builder(config)) Self {
-                return .{ .builder = builder };
+                return .{
+                    .executables = blk: {
+                        var executables: [d.executables.len]*std.Build.Step.Compile = undefined;
+                        for (d.executables, 0..) |e, i| {
+                            executables[i] = builder.build.addExecutable(.{
+                                .name = e.name,
+                                .root_source_file = builder.build.path(e.path),
+                                .target = builder.target,
+                                .optimize = builder.optimize,
+                            });
+                        }
+                        break :blk executables;
+                    },
+                };
             }
 
-            pub fn get(self: Self, tag: Tag) *std.Build.Step.Compile {
-                const i = @intFromEnum(tag);
-                if (self.executables[i] == null) {
-                    self.executables[i] = self.builder.build.addModule(d.executables[i].name, .{
-                        .root_source_file = self.builder.build.path(d.executables[i].path),
-                        .target = self.builder.target,
-                        .optimize = self.builder.optimize,
-                    });
-                }
-                return self.executables[i].?;
+            fn get(self: Self, tag: Tag) *std.Build.Step.Compile {
+                return switch (tag) {
+                    inline else => |t| self.executables[@intFromEnum(t)],
+                };
+            }
+
+            fn link(self: Self, executable: Tag, modules: Modules(config), targets: []const Dep) void {
+                var source = self.get(executable).root_module;
+                for (targets) |target| source.addImport(
+                    target.name orelse @tagName(target.module),
+                    modules.get(target.module),
+                );
+            }
+        },
+    };
+}
+
+inline fn Artifacts(comptime config: Config) type {
+    return switch (config) {
+        inline .default => struct {
+            const Self = @This();
+
+            builder: Builder(config),
+            executables: Executables(config),
+
+            fn init(builder: Builder(config), executables: Executables(config)) Self {
+                return .{
+                    .builder = builder,
+                    .executables = executables,
+                };
+            }
+
+            fn installExecutables(self: Self, tags: []const Executables(config).Tag) void {
+                for (tags) |tag| self.builder.build.installArtifact(
+                    self.executables.get(tag),
+                );
             }
         },
     };
@@ -244,144 +311,3 @@ pub fn Meta(comptime value: anytype) type {
         }
     };
 }
-
-// test "info" {
-//     const array = [_]u8{};
-//     std.testing.expect(std.meta.eql(.Array, Meta(array).Info.iterable().?));
-// }
-
-// fn generate(comptime tags: [][]const u8, ) type {
-//     switch (@typeInfo(@TypeOf(fields))) {
-//         .Pointer => |p| if (p.size != .Slice) {
-//             @compileError("Fields must be a slice");
-//         },
-//         else => @compileError("Fields must be a slice"),
-//     }
-//     return @Type(.{
-//         .Enum = .{
-//             .tag_type = std.math.IntFittingRange(0, fields.len - 1),
-//             .fields = blk: {
-//                 var enum_fields: [fields.len]std.builtin.Type.EnumField = undefined;
-//                 for (fields, 0..) |field, i| {
-//                     if (!@hasField(@TypeOf(field), "name")) {
-//                         @compileError("Field must have a 'name' field");
-//                     }
-//                     enum_fields[i] = .{ .name = @field(field, "name"), .value = i };
-//                 }
-//                 break :blk &enum_fields;
-//             },
-//             .decls = &.{},
-//             .is_exhaustive = true,
-//         },
-//     });
-// }
-
-// fn generateEnum(comptime fields: ) type {
-//     switch (@typeInfo(@TypeOf(fields))) {
-//         .Pointer => |p| if (p.size != .Slice) {
-//             @compileError("Fields must be a pointer of type slice");
-//         },
-//         else => @compileError("Fields must be a pointer of type slice"),
-//     }
-//     return @Type(.{
-//         .Enum = .{
-//             .tag_type = std.math.IntFittingRange(0, fields.len - 1),
-//             .fields = blk: {
-//                 var enum_fields: [fields.len]std.builtin.Type.EnumField = undefined;
-//                 for (fields, 0..) |field, i| {
-//                     if (!@hasField(@TypeOf(field), "name")) {
-//                         @compileError("Field must have a 'name' field");
-//                     }
-//                     enum_fields[i] = .{ .name = @field(field, "name"), .value = i };
-//                 }
-//                 break :blk &enum_fields;
-//             },
-//             .decls = &.{},
-//             .is_exhaustive = true,
-//         },
-//     });
-// }
-
-// pub const Modules(comptime mode) type {
-//     return struct {
-//         const Self = @This();
-
-//         flow: *std.Build.Module = config.build.addModule("flow", .{
-//             .root_source_file = config.build.path("lib/flow/root.zig"),
-//             .target = config.target,
-//             .optimize = config.optimize,
-//         }),
-
-//         container:*std.Build.Module = config.build.addModule("container", .{
-//             .root_source_file = config.build.path("lib/container/root.zig"),
-//             .target = config.target,
-//             .optimize = config.optimize,
-//         }),
-
-//          math: *std.Build.Module = config.build.addModule("math", .{
-//             .root_source_file = config.build.path("lib/math/root.zig"),
-//             .target = config.target,
-//             .optimize = config.optimize,
-//         }),
-
-//         fn init() Self {
-//             flow.addImport(container);
-//             container.addImport(math);
-//             return .{};
-//         }
-//     };
-// }
-
-// fn Executables(config: Config) type {
-//     return struct {
-//         const Self = @This();
-
-//         const flow = config.build.addExecutable(.{
-//             .name = "flow",
-//             .root_source_file = config.build.path("src/main.zig"),
-//             .target = config.target,
-//             .optimize = config.optimize,
-//         });
-
-//         fn init(modules: []*std.Build.Module) Self {
-//             const root = flow.root_module;
-//             for (modules) |m| root.addImport(m);
-//             config.build.installArtifact(flow);
-//             return .{};
-//         }
-//     };
-// }
-
-// fn Tests(config: Config) type {
-//     return struct {
-//         const flow = config.build.addTest(.{
-//             .root_source_file = config.build.path("lib/flow/root.zig"),
-//             .target = config.target,
-//             .optimize = config.optimize,
-//         });
-
-//         const container = config.build.addTest(.{
-//             .root_source_file = config.build.path("lib/flow/root.zig"),
-//             .target = config.target,
-//             .optimize = config.optimize,
-//         });
-
-//         const math = config.build.addTest(.{
-//             .root_source_file = config.build.path("lib/math/root.zig"),
-//             .target = config.target,
-//             .optimize = config.optimize,
-//         });
-//     };
-// }
-
-// fn Steps(config: Config) type {
-//     return struct {
-//         const tests = config.build.step("test", "Run unit tests");
-
-//         fn init(executables: Executables(config), modules: Modules(config)) void {
-//             unit_test.dependOn(b.addRunArtifact(&Tests.flow.step));
-//             unit_test.dependOn(b.addRunArtifact(&Tests.container.step));
-//             unit_test.dependOn(b.addRunArtifact(&Tests.math.step));
-//         }
-//     };
-// }
