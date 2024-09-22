@@ -4,32 +4,17 @@ const math = @import("math");
 const cmp = @import("cmp.zig");
 const pair = @import("pair.zig");
 
-pub fn Map(comptime Key: type, comptime Value: type) type {
+pub fn StringMap(comptime V: type) type {
     return struct {
-        const Self = @This();
-        pub const Entry = pair.Key(Key).Value(Value);
+        pub fn Static(comptime values: []V) type {
+            const Self = @This();
 
-        k: usize,
-        prime: usize,
-        entries: []Entry,
-
-        pub fn initComptime(comptime entries: []const Entry) Self {
-            const k, const prime = comptime blk: {
-                for (1..1e3) |term| {
-                    search: for (1..math.generatePri) |k| {
-                        var used = [_]bool{false} ** entries.len;
-                        for (entries) |entry| {
-                            const i = ((k * hash(entry.key)) % prime) % entries.len;
-                            if (used[i]) {
-                                continue :search;
-                            }
-                            used[i] = true;
-                        }
-                        break :blk .{ k, prime };
-                    }
-                }
-            };
-
+            k: usize,
+            prime: usize, 
+            keys: [values.len][]const u8 = undefined,
+            values: [values.len]V = undefined,
+        }
+    };
             var mapped = comptime blk: {
                 var mapped: [entries.len]Entry = undefined;
                 for (entries) |entry| {
