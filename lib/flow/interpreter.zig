@@ -8,6 +8,7 @@ allocator: std.mem.Allocator,
 
 pub const InterpreterError = error{
     UnsupportedNode,
+    UnsupportedKeyword,
     UnsupportedLiteral,
     UnsupportedSpecial,
     ExecutionError,
@@ -29,6 +30,10 @@ fn executeNode(self: *Self, node: *Parser.Node) InterpreterError!void {
             .file => try self.executeFile(node),
             .path => try self.executePath(node),
             .lines => try self.executeLines(node),
+            else => {
+                std.debug.print("{any}\n", .{node});
+                return InterpreterError.UnsupportedKeyword;
+            },
         },
         .operator => |lexeme| switch (lexeme) {
             .sort => try self.executeSort(node),

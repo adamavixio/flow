@@ -17,6 +17,7 @@ pub const Lexeme = union(enum) {
         file,
         path,
         lines,
+        print,
     },
     symbol: enum {
         arrow,
