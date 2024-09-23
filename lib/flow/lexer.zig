@@ -6,16 +6,6 @@ left: usize = 0,
 right: usize = 0,
 input: [:0]const u8,
 
-pub const State = enum {
-    init,
-    keyword,
-    operator,
-    literal_int,
-    literal_float,
-    literal_string,
-    invalid,
-};
-
 pub const Token = struct {
     left: usize,
     right: usize,
@@ -26,11 +16,16 @@ pub const Lexeme = union(enum) {
     keyword: enum {
         file,
         path,
+        lines,
     },
-    operator: enum {
+    symbol: enum {
         arrow,
+        chain,
         colon,
         pipe,
+    },
+    operator: enum {
+        sort,
     },
     literal: enum {
         int,
@@ -38,9 +33,20 @@ pub const Lexeme = union(enum) {
         string,
     },
     special: enum {
+        module,
         invalid,
         eof,
     },
+};
+
+pub const State = enum {
+    init,
+    char,
+    number,
+    symbol,
+    literal_float,
+    literal_string,
+    invalid,
 };
 
 pub fn init(input: [:0]const u8) Self {
@@ -66,13 +72,13 @@ pub fn next(self: *Self) Token {
                     self.left += 1;
                 },
                 'a'...'z' => {
-                    state = .keyword;
-                },
-                '-', ':', '|' => {
-                    state = .operator;
+                    state = .char;
                 },
                 '0'...'9' => {
-                    state = .literal_int;
+                    state = .number;
+                },
+                '-', '<', ':', '|' => {
+                    state = .symbol;
                 },
                 '\'' => {
                     state = .literal_string;
@@ -81,7 +87,7 @@ pub fn next(self: *Self) Token {
                     state = .invalid;
                 },
             },
-            .keyword => switch (byte) {
+            .char => switch (byte) {
                 'a'...'z' => {
                     continue;
                 },
@@ -90,6 +96,8 @@ pub fn next(self: *Self) Token {
                         const string = self.input[self.left..self.right];
                         if (std.mem.eql(u8, string, "file")) break :blk .{ .keyword = .file };
                         if (std.mem.eql(u8, string, "path")) break :blk .{ .keyword = .path };
+                        if (std.mem.eql(u8, string, "lines")) break :blk .{ .keyword = .lines };
+                        if (std.mem.eql(u8, string, "sort")) break :blk .{ .operator = .sort };
                         break :blk .{ .special = .invalid };
                     };
                     break;
@@ -98,37 +106,12 @@ pub fn next(self: *Self) Token {
                     state = .invalid;
                 },
             },
-            .operator => switch (byte) {
-                '>' => {
-                    continue;
-                },
-                0, ' ', '\n', '\t', '\r' => {
-                    lexeme = blk: {
-                        const string = self.input[self.left..self.right];
-                        if (std.mem.eql(u8, string, "->")) break :blk .{ .operator = .arrow };
-                        if (std.mem.eql(u8, string, ":")) break :blk .{ .operator = .colon };
-                        if (std.mem.eql(u8, string, "|")) break :blk .{ .operator = .pipe };
-                        break :blk .{ .special = .invalid };
-                    };
-                    break;
-                },
-                else => {
-                    state = .invalid;
-                },
-            },
-            .literal_int => switch (byte) {
+            .number => switch (byte) {
                 '0'...'9' => {
                     continue;
                 },
                 '.' => {
-                    switch (self.input[self.left]) {
-                        '0' => switch (self.input[self.left + 1]) {
-                            '.' => state = .literal_float,
-                            else => state = .invalid,
-                        },
-                        else => state = .literal_float,
-                    }
-                    continue;
+                    state = .literal_float;
                 },
                 0, ' ', '\n', '\t', '\r' => {
                     lexeme = switch (self.input[self.left]) {
@@ -141,14 +124,39 @@ pub fn next(self: *Self) Token {
                     state = .invalid;
                 },
             },
+            .symbol => switch (byte) {
+                '>' => {
+                    continue;
+                },
+                0, ' ', '\n', '\t', '\r' => {
+                    lexeme = blk: {
+                        const string = self.input[self.left..self.right];
+                        if (std.mem.eql(u8, string, "->")) break :blk .{ .symbol = .arrow };
+                        if (std.mem.eql(u8, string, "<>")) break :blk .{ .symbol = .chain };
+                        if (std.mem.eql(u8, string, ":")) break :blk .{ .symbol = .colon };
+                        if (std.mem.eql(u8, string, "|")) break :blk .{ .symbol = .pipe };
+                        break :blk .{ .special = .invalid };
+                    };
+                    break;
+                },
+                else => {
+                    state = .invalid;
+                },
+            },
             .literal_float => switch (byte) {
                 '0'...'9' => {
                     continue;
                 },
                 0, ' ', '\n', '\t', '\r' => {
-                    lexeme = switch (self.input[self.right - 1]) {
-                        '.' => .{ .special = .invalid },
-                        else => .{ .literal = .float },
+                    lexeme = switch (self.input[self.left]) {
+                        '0' => switch (self.input[self.left + 1]) {
+                            '.' => .{ .literal = .float },
+                            else => .{ .special = .invalid },
+                        },
+                        else => switch (self.input[self.right - 1]) {
+                            '.' => .{ .special = .invalid },
+                            else => .{ .literal = .float },
+                        },
                     };
                     break;
                 },
@@ -243,91 +251,91 @@ test "keyword" {
     }
 }
 
-test "operator" {
+test "symbol" {
     {
         var lexer = init("-> : |");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .operator = .arrow } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 3, .right = 4, .lexeme = .{ .operator = .colon } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .symbol = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 3, .right = 4, .lexeme = .{ .symbol = .colon } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init(" -> : |");
-        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .operator = .arrow } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .operator = .colon } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 6, .right = 7, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .symbol = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .symbol = .colon } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 6, .right = 7, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init("-> : | ");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .operator = .arrow } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 3, .right = 4, .lexeme = .{ .operator = .colon } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .symbol = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 3, .right = 4, .lexeme = .{ .symbol = .colon } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init(" -> : | ");
-        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .operator = .arrow } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .operator = .colon } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 6, .right = 7, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .symbol = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .symbol = .colon } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 6, .right = 7, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 8, .right = 8, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init("->: |");
         try std.testing.expectEqual(Token{ .left = 0, .right = 3, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 5, .right = 5, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init(" ->: |");
         try std.testing.expectEqual(Token{ .left = 1, .right = 4, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init("->: | ");
         try std.testing.expectEqual(Token{ .left = 0, .right = 3, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init(" ->: | ");
         try std.testing.expectEqual(Token{ .left = 1, .right = 4, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .symbol = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init("-> :|");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .symbol = .arrow } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 3, .right = 5, .lexeme = .{ .special = .invalid } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 5, .right = 5, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init(" -> :|");
-        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .symbol = .arrow } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 4, .right = 6, .lexeme = .{ .special = .invalid } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init("-> :| ");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .symbol = .arrow } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 3, .right = 5, .lexeme = .{ .special = .invalid } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init(" -> :| ");
-        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .symbol = .arrow } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 4, .right = 6, .lexeme = .{ .special = .invalid } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
     }
@@ -387,25 +395,30 @@ test "literal" {
                     var lexer = init(float);
                     switch (float[10]) {
                         '.' => {
+                            // std.debug.print("{s} float[10] = .\n", .{float});
                             try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .special = .invalid } }, lexer.next());
                             try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
                         },
                         else => switch (float[0]) {
                             '.' => {
+                                // std.debug.print("{s} float[0] = .\n", .{float});
                                 try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .special = .invalid } }, lexer.next());
                                 try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
                             },
                             '0' => switch (float[1]) {
                                 '.' => {
+                                    // std.debug.print("{s} float[0] = 0.\n", .{float});
                                     try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .literal = .float } }, lexer.next());
                                     try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
                                 },
                                 else => {
+                                    // std.debug.print("{s} float[0] = 0n\n", .{float});
                                     try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .special = .invalid } }, lexer.next());
                                     try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
                                 },
                             },
                             else => {
+                                // std.debug.print("{s} float[0] = n...\n", .{float});
                                 try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .literal = .float } }, lexer.next());
                                 try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
                             },

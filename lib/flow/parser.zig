@@ -1,86 +1,144 @@
-// const std = @import("std");
+const std = @import("std");
+const Lexer = @import("./lexer.zig");
 
-// const Token = @import("token.zig").Token;
-// const Lexer = @import("lexer.zig").Lexer;
-// const Node = @import("ast.zig").Node;
-// const BinaryType = @import("ast.zig").BinaryType;
+const Self = @This();
 
-// pub const Parser = struct {
-//     lexer: *Lexer,
-//     current_token: Token,
-//     allocator: std.mem.Allocator,
+token: Lexer.Token,
+lexer: Lexer,
+allocator: std.mem.Allocator,
 
-//     pub fn init(lexer: *Lexer, allocator: std.mem.Allocator) !Parser {
-//         var parser = Parser{
-//             .lexer = lexer,
-//             .current_token = undefined,
-//             .allocator = allocator,
-//         };
-//         try parser.nextToken();
-//         return parser;
-//     }
+pub const Error = error{
+    InvalidToken,
+};
 
-//     fn nextToken(self: *Parser) !void {
-//         self.current_token = self.lexer.next();
-//     }
+pub const Node = struct {
+    lexeme: Lexer.Lexeme,
+    literal: ?[]const u8,
+    children: std.ArrayList(*Node),
 
-//     pub fn parseExpression(self: *Parser) !*Node {
-//         var left = try self.parseTerm();
-//         while (self.current_token.tag == .plus or self.current_token.tag == .minus) {
-//             const op = if (self.current_token.tag == .plus) BinaryType.Add else BinaryType.Subtract;
-//             try self.nextToken();
-//             const right = try self.parseTerm();
-//             const node = try self.allocator.create(Node);
-//             node.* = Node{ .BinaryOp = .{ .op = op, .left = left, .right = right } };
-//             left = node;
-//         }
-//         return left;
-//     }
+    pub fn init(allocator: std.mem.Allocator, Lexer.Token) !*Node {
+        const node = try allocator.create(Node);
+        node.* = .{
+            .lexeme = token.lexeme,
+            .literal = switch (token.lexeme) {
+                .literal => try allocator.dupe(u8, lexer.input[token.left..token.right]),
+                else => null,
+            },
+            .children = std.ArrayList(*Node).init(allocator),
+        };
+        return node;
+    }
 
-//     fn parseTerm(self: *Parser) !*Node {
-//         var left = try self.parseFactor();
-//         while (self.current_token.tag == .asterisk or self.current_token.tag == .forward_slash) {
-//             const op = if (self.current_token.tag == .asterisk) BinaryType.Multiply else BinaryType.Divide;
-//             try self.nextToken();
-//             const right = try self.parseFactor();
-//             const node = try self.allocator.create(Node);
-//             node.* = Node{ .BinaryOp = .{ .op = op, .left = left, .right = right } };
-//             left = node;
-//         }
-//         return left;
-//     }
+    pub fn deinit(self: *Node, allocator: std.mem.Allocator) void {
+        for (self.children.items) |child| {
+            child.deinit(allocator);
+        }
+        self.children.deinit();
+        allocator.destroy(self);
+    }
+};
 
-//     fn parseFactor(self: *Parser) !*Node {
-//         if (self.current_token.tag == .int) {
-//             const value = try std.fmt.parseInt(i64, self.current_token.lexeme, 10);
-//             const node = try self.allocator.create(Node);
-//             node.* = Node{ .IntLiteral = .{ .value = value } };
-//             try self.nextToken();
-//             return node;
-//         } else {
-//             return error.UnexpectedToken;
-//         }
-//     }
-// };
+// file : path "ests" <> path "edsfs" -> lines | sort | deduplicate
 
-// test "parser" {
-//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-//     defer arena.deinit();
-//     const allocator = arena.allocator();
+pub fn init(allocator: std.mem.Allocator, lexer: Lexer) Self {
+    return .{
+        .token = .{
+            .left = 0,
+            .right = 0,
+            .lexeme = .{ .special = .module },
+        },
+        .lexer = lexer,
+        .allocator = allocator,
+    };
+}
 
-//     var lexer = Lexer.init("1 + 2 * 3");
-//     var parser = try Parser.init(&lexer, allocator);
+pub fn next(self: *Self) void {
+    self.token = self.lexer.next();
+}
 
-//     const root = try parser.parseExpression();
-//     defer root.deinit(allocator);
+pub fn parse(self: *Self) !*Node {
+    const node = Node.init(self.allocator, self.token);
 
-//     // Now you can traverse or evaluate the AST
-//     try std.testing.expect(root.* == .BinaryOp);
-//     try std.testing.expect(root.BinaryOp.op == .Add);
-//     try std.testing.expect(root.BinaryOp.left.* == .IntLiteral);
-//     try std.testing.expect(root.BinaryOp.left.IntLiteral.value == 1);
-//     try std.testing.expect(root.BinaryOp.right.* == .BinaryOp);
-//     try std.testing.expect(root.BinaryOp.right.BinaryOp.op == .Multiply);
-//     try std.testing.expect(root.BinaryOp.right.BinaryOp.left.IntLiteral.value == 2);
-//     try std.testing.expect(root.BinaryOp.right.BinaryOp.right.IntLiteral.value == 3);
-// }
+    while (true) {
+        self.next();
+        switch (self.token.lexeme) {
+            .keyword => |k| switch (k) {
+                .file => {
+                    const child = try self.parseFile();
+                    try self.root.children.append(child);
+                },
+                else => return Error.InvalidToken,
+            },
+            .special => |s| switch (s) {
+                .invalid => {
+                    const child = try Node.init(self.allocator, self.token);
+                    try self.root.children.append(child);
+                    break;
+                },
+                .eof => {
+                    break;
+                },
+                else => return error.InvalidToken,
+            },
+            else => return Error.InvalidToken,
+        }
+    }
+
+    return node;
+}
+
+pub fn parseFile(self: *Self) !*Node {
+    const node = try Node.init(self.allocator, self.token);
+
+    self.next();
+    switch (self.token.lexeme) {
+        .symbol => |s| switch (s) {
+            .colon => {},
+            else => return Error.InvalidToken,
+        },
+    }
+
+    while (true) {
+        self.next();
+        switch (self.token.lexeme) {
+            .keyword => |k| switch (k) {
+                .path => {
+                    const child = try self.parsePath();
+                    try node.children.append(child);
+                },
+                else => return error.InvalidToken,
+            },
+            .special => |s| switch (s) {
+                .invalid => {
+                    const child = try Node.init(self.allocator, self.token);
+                    try node.children.append(child);
+                    break;
+                },
+                .eof => {
+                    break;
+                },
+                else => return error.InvalidToken,
+            },
+            else => return error.InvalidToken,
+        }
+    }
+
+    return node;
+}
+
+pub fn parsePath(self: *Self) !*Node {
+    const node = try Node.init(self.allocator, self.token);
+
+    self.next();
+    switch (self.token.lexeme) {
+        .literal => |l| switch (l) {
+            .string => {
+                const child = try Node.init(self.allocator, self.token);
+                try node.children.append(child);
+            },
+            else => return Error.InvalidToken,
+        },
+    }
+
+    return node;
+}
