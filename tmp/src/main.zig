@@ -1,24 +1,35 @@
-const std = @import("std");
-
-pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
-
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // don't forget to flush!
+pub fn tagIs(self: *Self, tag: Lexer.Lexeme.Tag) bool {
+    return self.token.lexeme.isTag(tag);
 }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+pub fn valueIs(self: *Self, value: Lexer.Lexeme.Value) bool {
+    return self.token.lexeme.isValue(value);
+}
+
+pub fn nextTagIs(self: *Self, tag: Lexer.Lexeme.Tag) bool {
+    self.next();
+    return self.tagIs(tag);
+}
+
+pub fn nextValueIs(self: *Self, value: Lexer.Lexeme.Value) bool {
+    self.next();
+    return self.valueIs(tag);
+}
+
+pub fn assertTagIs(self: *Self, tag: Lexer.Lexeme.Tag) !void {
+    if (!self.tagIs(tag)) return Error.InvalidTag;
+}
+
+pub fn assertValueIs(self: *Self, value: Lexer.Lexeme.Value) !void {
+    if (!self.valueIs()) return Error.InvalidValue;
+}
+
+pub fn assertNextTagIs(self: *Self, tag: Lexer.Lexeme.Tag) !void {
+    self.next();
+    return self.assertTagIs(tag);
+}
+
+pub fn assertNextValueIs(self: *Self, value: Lexer.Lexeme.Value) !void {
+    self.next();
+    return self.assertValueIs(value);
 }

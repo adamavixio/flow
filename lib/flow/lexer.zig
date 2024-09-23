@@ -37,7 +37,65 @@ pub const Lexeme = union(enum) {
         invalid,
         eof,
     },
+
+    pub const Tag = std.meta.FieldEnum(Lexeme);
+
+    pub const Value = blk: {
+        var index: usize = 0;
+        var fields: []const std.builtin.Type.EnumField = &.{};
+        for (std.meta.fields(Lexeme)) |union_field| {
+            const FieldType = union_field.type;
+            for (std.meta.fields(FieldType)) |enum_field| {
+                const new_field = std.builtin.Type.EnumField{
+                    .name = enum_field.name,
+                    .value = index,
+                };
+                fields = fields ++ &[_]std.builtin.Type.EnumField{new_field};
+                index += 1;
+            }
+        }
+        break :blk @Type(.{
+            .Enum = .{
+                .tag_type = std.math.IntFittingRange(0, fields.len - 1),
+                .fields = fields,
+                .decls = &.{},
+                .is_exhaustive = true,
+            },
+        });
+    };
+
+    pub fn isTag(self: Lexeme, tag: Tag) bool {
+        return std.meta.activeTag(self) == tag;
+    }
+
+    pub fn isValue(self: Lexeme, value: Value) bool {
+        switch (self) {
+            inline else => |field| {
+                return std.mem.eql(u8, @tagName(field), @tagName(value));
+            },
+        }
+    }
 };
+
+test "lexeme" {
+    {
+        const lexeme = Lexeme{ .keyword = .file };
+        try std.testing.expect(lexeme.isTag(.keyword));
+        try std.testing.expect(!lexeme.isTag(.symbol));
+        try std.testing.expect(!lexeme.isTag(.operator));
+        try std.testing.expect(!lexeme.isTag(.literal));
+        try std.testing.expect(!lexeme.isTag(.special));
+    }
+
+    {
+        const lexeme = Lexeme{ .keyword = .file };
+        try std.testing.expect(lexeme.isValue(.file));
+        try std.testing.expect(!lexeme.isValue(.path));
+        try std.testing.expect(!lexeme.isValue(.lines));
+        try std.testing.expect(!lexeme.isValue(.arrow));
+        try std.testing.expect(!lexeme.isValue(.chain));
+    }
+}
 
 pub const State = enum {
     init,
