@@ -18,23 +18,21 @@ pub const Error = error{
 
 pub const Node = struct {
     lexeme: Lexer.Lexeme,
-    literal: ?[]const u8,
+    literal: []const u8,
     children: std.ArrayList(*Node),
 
     pub fn init(allocator: std.mem.Allocator, lexer: Lexer, token: Lexer.Token) !*Node {
         const node = try allocator.create(Node);
         node.* = .{
             .lexeme = token.lexeme,
-            .literal = switch (token.lexeme) {
-                .literal => try allocator.dupe(u8, lexer.input[token.left..token.right]),
-                else => null,
-            },
+            .literal = try allocator.dupe(u8, lexer.input[token.left..token.right]),
             .children = std.ArrayList(*Node).init(allocator),
         };
         return node;
     }
 
     pub fn deinit(self: *Node, allocator: std.mem.Allocator) void {
+        allocator.free(self.literal);
         for (self.children.items) |child| {
             child.deinit(allocator);
         }
@@ -45,9 +43,7 @@ pub const Node = struct {
     fn printNode(node: *const Node, writer: anytype, depth: usize) !void {
         try writer.writeByteNTimes(' ', depth * 2);
         try writer.print("{s}", .{@tagName(node.lexeme)});
-        if (node.literal) |lit| {
-            try writer.print(": \"{s}\"", .{lit});
-        }
+        try writer.print(": \"{s}\"", .{node.literal});
         try writer.writeByte('\n');
 
         for (node.children.items) |child| {
@@ -77,7 +73,7 @@ pub fn next(self: *Self) void {
 }
 
 pub fn parse(self: *Self) !*Node {
-    const node = Node.init(self.allocator, self.lexer, self.token);
+    const node = try Node.init(self.allocator, self.lexer, self.token);
 
     while (true) {
         self.next();
@@ -87,7 +83,7 @@ pub fn parse(self: *Self) !*Node {
                 else => return Error.InvalidKeywordToken,
             },
             .special => |lexeme| switch (lexeme) {
-                .invalid => try Node.init(self.allocator, self.token),
+                .invalid => try Node.init(self.allocator, self.lexer, self.token),
                 .eof => break,
                 else => return Error.InvalidSpecialToken,
             },
@@ -100,7 +96,7 @@ pub fn parse(self: *Self) !*Node {
 }
 
 pub fn parseFile(self: *Self) !*Node {
-    const node = try Node.init(self.allocator, self.token);
+    const node = try Node.init(self.allocator, self.lexer, self.token);
 
     self.next();
     switch (self.token.lexeme) {
@@ -135,9 +131,9 @@ pub fn parseFile(self: *Self) !*Node {
 
     self.next();
     const child = switch (self.token.lexeme) {
-        .operator => |lexeme| switch (lexeme) {
-            .lines => {},
-            else => return Error.InvalidOperatorToken,
+        .keyword => |lexeme| switch (lexeme) {
+            .lines => try self.parseLines(),
+            else => return Error.InvalidKeywordToken,
         },
         else => return Error.InvalidTokenTag,
     };
@@ -147,7 +143,7 @@ pub fn parseFile(self: *Self) !*Node {
 }
 
 pub fn parsePath(self: *Self) !*Node {
-    const node = try Node.init(self.allocator, self.token);
+    const node = try Node.init(self.allocator, self.lexer, self.token);
 
     self.next();
     const child = switch (self.token.lexeme) {
@@ -171,6 +167,10 @@ pub fn parseLines(self: *Self) !*Node {
             .symbol => |lexeme| switch (lexeme) {
                 .pipe => {},
                 else => break,
+            },
+            .special => |lexeme| switch (lexeme) {
+                .eof => break,
+                else => return Error.InvalidSpecialToken,
             },
             else => return Error.InvalidTokenTag,
         }
@@ -196,7 +196,7 @@ fn print(self: *Self) ![]u8 {
     var list = std.ArrayList(u8).init(self.allocator);
     defer list.deinit();
 
-    try root.printNode(list.writer());
+    try root.printNode(list.writer(), 1);
     return list.toOwnedSlice();
 }
 
