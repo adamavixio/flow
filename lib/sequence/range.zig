@@ -12,17 +12,19 @@ pub fn Range(comptime N: type, comptime bound: Bound) type {
     }
 
     return struct {
+        const Self = @This();
+
         iter: N,
         step: N,
         start: N,
         stop: N,
 
-        pub fn init(start: N, stop: N, step: N) @This() {
+        pub fn init(start: N, stop: N, step: N) Self {
             if (step < 1) @panic("Parameter 'step' cannot be less than '1'");
             return .{ .iter = @min(start, stop), .step = step, .start = start, .stop = stop };
         }
 
-        pub fn next(self: *@This()) ?N {
+        pub fn next(self: *Self) ?N {
             const curr = @min(self.start, self.stop) + self.iter;
             const last = @max(self.start, self.stop) + @intFromEnum(bound);
             if (curr >= last) return null;
@@ -34,42 +36,30 @@ pub fn Range(comptime N: type, comptime bound: Bound) type {
             return value;
         }
 
-        pub fn Static(comptime start: N, comptime stop: N, comptime step: N) type {
+        pub inline fn Static(comptime start: N, comptime stop: N, comptime step: N) type {
             if (step < 1) @compileError("Parameter 'step' cannot be less than '1'");
             return struct {
                 pub const min: N = @min(start, stop);
                 pub const max: N = @max(start, stop);
                 pub const size: N = (max - min + @intFromEnum(bound)) / step;
 
-                iter: N,
+                range: Self,
 
-                pub fn init() @This() {
-                    return .{ .iter = min };
+                pub inline fn init() @This() {
+                    return .{ .range = Self.init(start, stop, step) };
                 }
 
-                pub fn next(self: *@This()) ?N {
-                    const curr = min + self.iter;
-                    const last = max + @intFromEnum(bound);
-                    if (curr >= last) return null;
-                    const value = blk: {
-                        if (start <= stop) break :blk self.iter;
-                        break :blk start - self.iter;
-                    };
-                    self.iter += step;
-                    return value;
+                pub inline fn next(self: *@This()) ?N {
+                    return self.range.next();
                 }
 
-                pub fn collect() [size]N {
-                    var iter = min;
-                    var sequence: [size]N = undefined;
-                    for (0..size) |i| {
-                        sequence[i] = blk: {
-                            if (start <= stop) break :blk iter;
-                            break :blk start - iter;
-                        };
-                        iter += step;
+                pub inline fn collect() [size]N {
+                    var result: [size]N = undefined;
+                    var range = Self.init(start, stop, step);
+                    for (&result) |*item| {
+                        item.* = range.next() orelse unreachable;
                     }
-                    return sequence;
+                    return result;
                 }
             };
         }

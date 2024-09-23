@@ -10,17 +10,14 @@ fn Indexes(comptime n: usize) type {
         done: bool,
 
         pub fn init() Self {
-            return .{
-                .permutation = Range.collect(),
-                .done = false,
-            };
+            return .{ .iter = Range.collect(), .done = false };
         }
 
         pub fn next(self: *Self) ?[n]usize {
             if (self.done) return null;
 
             var result: [n]usize = undefined;
-            std.mem.copyForwards(usize, &result, &self.permutation);
+            std.mem.copyForwards(usize, &result, &self.iter);
 
             if (n == 1) {
                 self.done = true;
@@ -28,7 +25,7 @@ fn Indexes(comptime n: usize) type {
             }
 
             var k: usize = n - 2;
-            while (self.permutation[k] >= self.permutation[k + 1]) : (k -= 1) {
+            while (self.iter[k] >= self.iter[k + 1]) : (k -= 1) {
                 if (k == 0) {
                     self.done = true;
                     return result;
@@ -36,10 +33,10 @@ fn Indexes(comptime n: usize) type {
             }
 
             var l: usize = n - 1;
-            while (self.permutation[@intCast(k)] >= self.permutation[l]) : (l -= 1) {}
+            while (self.iter[@intCast(k)] >= self.iter[l]) : (l -= 1) {}
 
-            std.mem.swap(usize, &self.permutation[@intCast(k)], &self.permutation[l]);
-            std.mem.reverse(usize, self.permutation[@intCast(k + 1)..]);
+            std.mem.swap(usize, &self.iter[@intCast(k)], &self.iter[l]);
+            std.mem.reverse(usize, self.iter[@intCast(k + 1)..]);
 
             return result;
         }

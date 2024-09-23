@@ -122,12 +122,11 @@ pub fn next(self: *Self) Token {
                 },
                 '.' => {
                     switch (self.input[self.left]) {
-                        '0' => if (self.left + 1 != self.right) {
-                            state = .invalid;
+                        '0' => switch (self.input[self.left + 1]) {
+                            '.' => state = .literal_float,
+                            else => state = .invalid,
                         },
-                        else => {
-                            state = .literal_float;
-                        },
+                        else => state = .literal_float,
                     }
                     continue;
                 },
@@ -180,6 +179,7 @@ pub fn next(self: *Self) Token {
             },
             .invalid => switch (byte) {
                 0, ' ', '\n', '\t', '\r' => {
+                    lexeme = .{ .special = .invalid };
                     break;
                 },
                 else => {
@@ -196,54 +196,11 @@ pub fn next(self: *Self) Token {
     };
 }
 
-// 0 1 2 3
-// 0 1 3 2
-// 0 2 1 3
-// 0 2 3 1
-// 0 3 1 2
-// 0 3 2 1
-
-fn generateCombinations(comptime n: usize) type {
-    return struct {
-        const max_value = (1 << n) - 1;
-
-        value: usize,
-
-        pub fn init() @This() {
-            return .{ .value = 0 };
-        }
-
-        pub fn next(self: *@This()) ?[n]bool {
-            if (self.value > max_value) return null;
-
-            var result: [n]bool = undefined;
-            inline for (0..n) |i| {
-                result[i] = (self.value & (1 << i)) != 0;
-            }
-
-            self.value += 1;
-            return result;
-        }
-    };
-}
-
 test "keyword" {
-    const n = 3;
-    var gen = generateCombinations(n).init();
-
-    while (gen.next()) |combination| {
-        std.debug.print("Combination: ", .{});
-        for (combination) |value| {
-            std.debug.print("{}", .{@intFromBool(value)});
-        }
-        std.debug.print("\n", .{});
-    }
-
     {
         var lexer = init("file path");
         try std.testing.expectEqual(Token{ .left = 0, .right = 4, .lexeme = .{ .keyword = .file } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 5, .right = 9, .lexeme = .{ .keyword = .path } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
@@ -252,7 +209,6 @@ test "keyword" {
         try std.testing.expectEqual(Token{ .left = 1, .right = 5, .lexeme = .{ .keyword = .file } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 6, .right = 10, .lexeme = .{ .keyword = .path } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
@@ -260,13 +216,11 @@ test "keyword" {
         try std.testing.expectEqual(Token{ .left = 0, .right = 4, .lexeme = .{ .keyword = .file } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 5, .right = 9, .lexeme = .{ .keyword = .path } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init("filepath");
         try std.testing.expectEqual(Token{ .left = 0, .right = 8, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 8, .right = 8, .lexeme = .{ .special = .eof } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 8, .right = 8, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
@@ -274,20 +228,17 @@ test "keyword" {
         var lexer = init(" filepath");
         try std.testing.expectEqual(Token{ .left = 1, .right = 9, .lexeme = .{ .special = .invalid } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init("filepath ");
         try std.testing.expectEqual(Token{ .left = 0, .right = 8, .lexeme = .{ .special = .invalid } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
         var lexer = init(" filepath ");
         try std.testing.expectEqual(Token{ .left = 1, .right = 9, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 }
@@ -324,50 +275,242 @@ test "operator" {
         try std.testing.expectEqual(Token{ .left = 6, .right = 7, .lexeme = .{ .operator = .pipe } }, lexer.next());
         try std.testing.expectEqual(Token{ .left = 8, .right = 8, .lexeme = .{ .special = .eof } }, lexer.next());
     }
+
+    {
+        var lexer = init("->: |");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 3, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 5, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(" ->: |");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 4, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init("->: | ");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 3, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 5, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(" ->: | ");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 4, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 6, .lexeme = .{ .operator = .pipe } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init("-> :|");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 3, .right = 5, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 5, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(" -> :|");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 6, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init("-> :| ");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 2, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 3, .right = 5, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(" -> :| ");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 3, .lexeme = .{ .operator = .arrow } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 6, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(":|::||-->>->->");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 14, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 14, .right = 14, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(" :|::||-->>->->");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 15, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 15, .right = 15, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(":|::||-->>->-> ");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 14, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 15, .right = 15, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
+
+    {
+        var lexer = init(" :|::||-->>->-> ");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 15, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 16, .right = 16, .lexeme = .{ .special = .eof } }, lexer.next());
+    }
 }
 
 test "literal" {
     {
-        const int = "0123456789";
-        inline for (0..int.len) |i| {
-            var lexer = init(int[i..] ++ int[0..i]);
-            switch (i) {
-                0 => {
-                    try std.testing.expectEqual(Token{ .left = 0, .right = 10, .lexeme = .{ .special = .invalid } }, lexer.next());
-                    try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
-                },
-                else => {
-                    try std.testing.expectEqual(Token{ .left = 0, .right = 10, .lexeme = .{ .literal = .int } }, lexer.next());
-                    try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
-                },
+        {
+            const numbers = "0123456789";
+            inline for (0..numbers.len) |i| {
+                var lexer = init(numbers[i..] ++ numbers[0..i]);
+                switch (i) {
+                    0 => {
+                        try std.testing.expectEqual(Token{ .left = 0, .right = 10, .lexeme = .{ .special = .invalid } }, lexer.next());
+                        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
+                    },
+                    else => {
+                        try std.testing.expectEqual(Token{ .left = 0, .right = 10, .lexeme = .{ .literal = .int } }, lexer.next());
+                        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
+                    },
+                }
             }
         }
     }
 
-    // {
-    //     const float = "0123456789";
-    //     inline for (0..float.len) |i| {
-    //         var lexer = init(float[i..] ++ "." ++ float[0..i]);
-    //         switch (i) {
-    //             0 => {
-    //                 try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .special = .invalid } }, lexer.next());
-    //                 try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
-    //             },
-    //             else => {
-    //                 try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .literal = .float } }, lexer.next());
-    //                 try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
-    //             },
-    //         }
-    //     }
-    // }
+    {
+        {
+            const numbers = "0123456789";
+            inline for (0..numbers.len) |i| {
+                const rotate = numbers[i..] ++ numbers[0..i];
+                inline for (0..rotate.len + 1) |j| {
+                    const float = rotate[0..j] ++ "." ++ rotate[j..];
+                    var lexer = init(float);
+                    switch (float[10]) {
+                        '.' => {
+                            try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .special = .invalid } }, lexer.next());
+                            try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
+                        },
+                        else => switch (float[0]) {
+                            '.' => {
+                                try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .special = .invalid } }, lexer.next());
+                                try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
+                            },
+                            '0' => switch (float[1]) {
+                                '.' => {
+                                    try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .literal = .float } }, lexer.next());
+                                    try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
+                                },
+                                else => {
+                                    try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .special = .invalid } }, lexer.next());
+                                    try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
+                                },
+                            },
+                            else => {
+                                try std.testing.expectEqual(Token{ .left = 0, .right = 11, .lexeme = .{ .literal = .float } }, lexer.next());
+                                try std.testing.expectEqual(Token{ .left = 11, .right = 11, .lexeme = .{ .special = .eof } }, lexer.next());
+                            },
+                        },
+                    }
+                }
+            }
+        }
 
-    //
-    // Float
-    //
+        {
+            var lexer = init("0.123");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 5, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 5, .right = 5, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
 
-    //
-    // String
-    //
+        {
+            var lexer = init(" 0.123");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 6, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init("0.123 ");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 5, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init(" 0.123 ");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 6, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init("12.34");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 5, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 5, .right = 5, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init(" 12.34");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 6, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init("12.34 ");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 5, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init(" 12.34 ");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 6, .lexeme = .{ .literal = .float } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init("01.23");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 5, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 5, .right = 5, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init(" 01.23");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 6, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init("01.23 ");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 5, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 6, .right = 6, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init(" 01.23 ");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 6, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init("1.234.5");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 7, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 7, .right = 7, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init(" 1.234.5");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 8, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 8, .right = 8, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init("1.234.5 ");
+            try std.testing.expectEqual(Token{ .left = 0, .right = 7, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 8, .right = 8, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+
+        {
+            var lexer = init(" 1.234.5 ");
+            try std.testing.expectEqual(Token{ .left = 1, .right = 8, .lexeme = .{ .special = .invalid } }, lexer.next());
+            try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
+        }
+    }
 
     {
         {
