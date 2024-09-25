@@ -27,7 +27,7 @@ pub const Lexeme = union(enum) {
     },
     operator: enum {
         sort,
-        deduplicate,
+        unique,
     },
     literal: enum {
         int,

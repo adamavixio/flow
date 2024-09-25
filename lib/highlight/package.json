@@ -1,0 +1,42 @@
+{
+  "name": "flo",
+  "displayName": "flo",
+  "description": "Syntax highlighting for flow language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "flow",
+        "aliases": [
+          "flow",
+          "Flow"
+        ],
+        "extensions": [
+          ".flo"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "flow",
+        "scopeName": "source.flo",
+        "path": "./syntaxes/flow.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "bun vsce package",
+    "install": "code --install-extension flow-syntax-0.0.1.vsix"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@vscode/vsce": "^3.1.0"
+  }
+}
