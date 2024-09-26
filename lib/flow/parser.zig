@@ -34,50 +34,36 @@ pub const AST = struct {
     }
 
     pub fn deinit(self: *AST, allocator: std.mem.Allocator) void {
-        allocator.free(self.literal);
         for (self.children.items) |child| {
             child.deinit(allocator);
         }
         self.children.deinit();
         allocator.destroy(self);
     }
-
-    pub fn append(self: *AST, allocator: std.mem.Allocator, token: Lexer.Token) !void {
-        const child = try self.init(allocator, token);
-        try self.children.append(child);
-    }
 };
 
 pub fn init(allocator: std.mem.Allocator, lexer: Lexer) Self {
-    return .{
-        .token = .{
-            .left = 0,
-            .right = 0,
-            .lexeme = .{ .special = .module },
-        },
-        .lexer = lexer,
-        .allocator = allocator,
-    };
-}
-
-pub fn next(self: *Self) !*AST {
-    return try AST.init(self.allocator, self.lexer.next());
+    return .{ .lexer = lexer, .allocator = allocator };
 }
 
 pub fn parse(self: *Self) !*AST {
-    const root = try AST.init(self.allocator, self.lexer.next());
+    const root = try AST.init(
+        self.allocator,
+        Lexer.Token{ .left = 0, .right = 0, .lexeme = .{ .special = .module } },
+    );
+    errdefer root.deinit(self.allocator);
 
     while (true) {
         const token = self.lexer.next();
         const child = switch (token.lexeme) {
-            .keyword => |lexeme| try parseKeyword(lexeme, token),
+            .keyword => |lexeme| try self.parseKeyword(lexeme, token),
             .special => |lexeme| switch (lexeme) {
                 .eof => break,
                 else => return Error.InvalidSpecialToken,
             },
             else => return Error.InvalidTokenTag,
         };
-        try root.append(self.allocator, child);
+        try root.children.append(child);
     }
 
     return root;
@@ -87,20 +73,25 @@ pub fn parseKeyword(self: *Self, keyword: Lexer.Lexeme.Keyword, token: Lexer.Tok
     const root = try AST.init(self.allocator, token);
 
     var symbol = self.lexer.next();
-    try expectSymbol(self.lexer.next(), .colon);
+    try expectSymbol(symbol, .colon);
 
     while (true) {
-        const literal = try parseLiteral(keyword, token);
-        try root.append(self.allocator, literal);
+        const literal = try self.parseLiteral(keyword, self.lexer.next());
+        try root.children.append(literal);
 
         symbol = self.lexer.next();
         if (!isSymbol(symbol, .chain)) break;
     }
 
     while (true) {
-        const literal = try parseLiteral(self.lexer.next(), keyword);
-        try root.append(self.allocator, literal);
+        const literal = try self.parseOperator(keyword, self.lexer.next());
+        try root.children.append(literal);
+
+        symbol = self.lexer.next();
+        if (!isSymbol(symbol, .pipe)) break;
     }
+
+    return root;
 }
 
 pub fn isSymbol(token: Lexer.Token, expected: Lexer.Lexeme.Symbol) bool {
@@ -117,19 +108,19 @@ pub fn expectSymbol(token: Lexer.Token, expected: Lexer.Lexeme.Symbol) !void {
 pub fn isLiteral(token: Lexer.Token, expected: Lexer.Lexeme.Literal) bool {
     switch (token.lexeme) {
         .literal => |actual| return expected == actual,
-        else => false,
+        else => return false,
     }
 }
 
 pub fn expectLiteral(token: Lexer.Token, expected: Lexer.Lexeme.Literal) !void {
-    if (isLiteral(token, expected)) return Error.InvalidLiteralToken;
+    if (!isLiteral(token, expected)) return Error.InvalidLiteralToken;
 }
 
 pub fn parseLiteral(self: *Self, keyword: Lexer.Lexeme.Keyword, token: Lexer.Token) !*AST {
     try switch (keyword) {
-        .int => expectLiteral(token.lexeme, .int),
-        .float => expectLiteral(token.lexeme, .float),
-        .string => expectLiteral(token.lexeme, .string),
+        .int => expectLiteral(token, .int),
+        .float => expectLiteral(token, .float),
+        .string => expectLiteral(token, .string),
     };
     return try AST.init(self.allocator, token);
 }
@@ -137,7 +128,7 @@ pub fn parseLiteral(self: *Self, keyword: Lexer.Lexeme.Keyword, token: Lexer.Tok
 pub fn isOperator(token: Lexer.Token, expected: Lexer.Lexeme.Operator) bool {
     switch (token.lexeme) {
         .operator => |actual| return expected == actual,
-        else => false,
+        else => return false,
     }
 }
 
@@ -146,11 +137,24 @@ pub fn expectOperator(token: Lexer.Token, expected: Lexer.Lexeme.Operator) !void
 }
 
 pub fn parseOperator(self: *Self, keyword: Lexer.Lexeme.Keyword, token: Lexer.Token) !*AST {
-    const declared = switch (keyword) {
-        .int => @hasDecl(Type.Primitive.Int, @tagName(token.lexeme)),
-        .float => @hasDecl(Type.Primitive.Float, @tagName(token.lexeme)),
-        .string => @hasDecl(Type.Primitive.String, @tagName(token.lexeme)),
+    const declared = switch (token.lexeme) {
+        .operator => |operator| switch (keyword) {
+            .int => switch (operator) {
+                .sort => @hasDecl(Type.Primitive.Int, "sort"),
+                .unique => @hasDecl(Type.Primitive.Int, "unique"),
+            },
+            .float => switch (operator) {
+                .sort => @hasDecl(Type.Primitive.Float, "sort"),
+                .unique => @hasDecl(Type.Primitive.Float, "unique"),
+            },
+            .string => switch (operator) {
+                .sort => @hasDecl(Type.Primitive.String, "sort"),
+                .unique => @hasDecl(Type.Primitive.String, "unique"),
+            },
+        },
+        else => return Error.InvalidTokenTag,
     };
+
     if (!declared) return Error.InvalidOperatorMethod;
     return try AST.init(self.allocator, token);
 }

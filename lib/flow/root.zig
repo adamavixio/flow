@@ -6,6 +6,6 @@ pub const Interpreter = @import("interpreter.zig");
 
 test {
     std.testing.refAllDecls(Lexer);
-    // std.testing.refAllDecls(Parser);
-    // std.testing.refAllDecls(Interpreter);
+    std.testing.refAllDecls(Parser);
+    std.testing.refAllDecls(Interpreter);
 }
