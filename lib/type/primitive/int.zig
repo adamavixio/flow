@@ -6,7 +6,7 @@ len: usize,
 data: []u8,
 allocator: std.mem.Allocator,
 
-fn init(allocator: std.mem.Allocator, data: []const u8) !Self {
+pub fn init(allocator: std.mem.Allocator, data: []const u8) !Self {
     return .{
         .len = data.len,
         .data = try allocator.dupe(u8, data),
@@ -14,19 +14,19 @@ fn init(allocator: std.mem.Allocator, data: []const u8) !Self {
     };
 }
 
-fn deinit(self: *Self) void {
+pub fn deinit(self: *Self) void {
     self.allocator.free(self.data);
     self.* = undefined;
 }
 
-fn sort(self: *Self, comptime order: enum { asc, desc }) void {
+pub fn sort(self: *Self, comptime order: enum { asc, desc }) void {
     std.mem.sort(u8, self.data, {}, switch (order) {
         .asc => std.sort.asc(u8),
         .desc => std.sort.desc(u8),
     });
 }
 
-fn unique(self: *Self) !void {
+pub fn unique(self: *Self) !void {
     var seen = std.AutoHashMap(u8, void).init(self.allocator);
     defer seen.deinit();
 

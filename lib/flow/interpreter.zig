@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const Type = @import("type");
 const Lexer = @import("lexer.zig");
 const Parser = @import("parser.zig");
 
@@ -7,118 +8,117 @@ pub const Self = @This();
 
 allocator: std.mem.Allocator,
 
-pub const InterpreterError = error{
+pub const Error = error{
     UnsupportedNode,
     UnsupportedKeyword,
     UnsupportedLiteral,
     UnsupportedSpecial,
     ExecutionError,
+} || std.mem.Allocator.Error;
+
+pub const Primitive = union(enum) {
+    int: Type.Primitive.Int,
+    float: Type.Primitive.Float,
+    string: Type.Primitive.String,
+
+    pub fn deinit(self: *Primitive) void {
+        switch (self.*) {
+            .int => |*v| v.deinit(),
+            .float => |*v| v.deinit(),
+            .string => |*v| v.deinit(),
+        }
+    }
 };
 
 pub fn init(allocator: std.mem.Allocator) Self {
-    return .{
-        .allocator = allocator,
-    };
+    return .{ .allocator = allocator };
 }
 
-pub fn interpret(self: *Self, ast: *Parser.AST) InterpreterError!void {
+pub fn interpret(self: *Self, ast: *Parser.AST) Error!void {
     try self.executeNode(ast);
 }
 
-fn executeNode(self: *Self, node: *Parser.AST) InterpreterError!void {
+fn executeNode(self: *Self, node: *Parser.AST) Error!void {
     switch (node.lexeme) {
-        .keyword => |lexeme| switch (lexeme) {
-            .file => try self.executeFile(node),
-            .path => try self.executePath(node),
-            .lines => try self.executeLines(node),
-            else => {
-                std.log.debug("{any}\n", .{node});
-                return InterpreterError.UnsupportedKeyword;
-            },
-        },
-        .operator => |lexeme| switch (lexeme) {
-            .sort => try self.executeSort(node),
-            .unique => try self.executeUnique(node),
-        },
-        .literal => |lexeme| switch (lexeme) {
-            .string => try self.executeString(node),
-            else => {
-                std.log.debug("{any}\n", .{node});
-                return InterpreterError.UnsupportedLiteral;
-            },
-        },
+        .keyword => try self.executeKeyword(node),
         .special => |lexeme| switch (lexeme) {
             .module => try self.executeModule(node),
             else => {
                 std.log.debug("{any}\n", .{node});
-                return InterpreterError.UnsupportedSpecial;
+                return Error.UnsupportedSpecial;
             },
         },
         else => {
             std.log.debug("{any}\n", .{node});
-            return InterpreterError.UnsupportedNode;
+            return Error.UnsupportedNode;
         },
     }
 }
 
-fn executeModule(self: *Self, node: *Parser.AST) InterpreterError!void {
-    std.log.debug("Executing module: {s}\n", .{node.literal});
+fn executeModule(self: *Self, node: *Parser.AST) Error!void {
     for (node.children.items) |child| {
-        self.executeNode(child) catch |err| {
-            std.log.debug("Error executing child node: {}\n", .{err});
-            return InterpreterError.ExecutionError;
-        };
+        try self.executeNode(child);
     }
 }
 
-fn executeFile(self: *Self, node: *Parser.AST) InterpreterError!void {
-    std.log.debug("Executing file: {s}\n", .{node.literal});
-    for (node.children.items) |child| {
-        self.executeNode(child) catch |err| {
-            std.log.debug("Error executing child node: {}\n", .{err});
-            return InterpreterError.ExecutionError;
-        };
+fn executeKeyword(self: *Self, node: *Parser.AST) Error!void {
+    var literals = std.ArrayList(*Parser.AST).init(self.allocator);
+    defer literals.deinit();
+
+    var operators = std.ArrayList(*Parser.AST).init(self.allocator);
+    defer operators.deinit();
+
+    for (node.children.items) |child| switch (child.lexeme) {
+        .literal => try literals.append(child),
+        .operator => try operators.append(child),
+        else => return Error.UnsupportedNode,
+    };
+
+    for (literals.items) |literal| {
+        var primitive = try self.executeLiteral(node, literal);
+        defer primitive.deinit();
+        switch (primitive) {
+            inline else => |*value| for (operators.items) |operator| {
+                switch (operator.lexeme.operator) {
+                    .sort => value.sort(.asc),
+                    .unique => try value.unique(),
+                }
+            },
+        }
+        std.debug.print("|{s}|", .{primitive.string.data});
     }
 }
 
-fn executePath(_: *Self, node: *Parser.AST) InterpreterError!void {
-    std.log.debug("Processing path: {s}\n", .{node.literal});
-    // Here you would typically read the file content
-    // For now, we'll just print the path
+fn executeLiteral(self: *Self, parent: *Parser.AST, child: *Parser.AST) Error!Primitive {
+    const literal = child.literal orelse return Error.ExecutionError;
+    return switch (parent.lexeme) {
+        .keyword => |keyword| switch (keyword) {
+            .int => .{ .int = try Type.Primitive.Int.init(self.allocator, literal) },
+            .float => .{ .float = try Type.Primitive.Float.init(self.allocator, literal) },
+            .string => .{ .string = try Type.Primitive.String.init(self.allocator, trimQuotes(literal)) },
+        },
+        else => error.UnsupportedNode,
+    };
 }
 
-fn executeLines(self: *Self, node: *Parser.AST) InterpreterError!void {
-    std.log.debug("Processing lines\n", .{});
-    for (node.children.items) |child| {
-        self.executeNode(child) catch |err| {
-            std.log.debug("Error processing line operation: {}\n", .{err});
-            return InterpreterError.ExecutionError;
-        };
+fn trimQuotes(str: []const u8) []const u8 {
+    if (str.len >= 2 and str[0] == '\'' and str[str.len - 1] == '\'') {
+        return str[1 .. str.len - 1];
     }
+    return str;
 }
 
-fn executeSort(_: *Self, _: *Parser.AST) InterpreterError!void {
-    std.log.debug("Sorting lines\n", .{});
-    // Implement sorting logic here
-}
+test "Interpreter test" {
+    const allocator = std.testing.allocator;
 
-fn executeUnique(_: *Self, _: *Parser.AST) InterpreterError!void {
-    std.log.debug("Deduplicating lines\n", .{});
-    // Implement deduplication logic here
-}
+    const input = "string : 'ccbbaa' <> 'aabbcc' | sort | unique";
+    const lexer = Lexer.init(input);
 
-fn executeString(_: *Self, node: *Parser.AST) InterpreterError!void {
-    std.log.debug("String literal: {s}\n", .{node.literal});
-}
+    var parser = Parser.init(allocator, lexer);
+    var ast = try parser.parse();
+    defer ast.deinit(allocator);
 
-// test "Interpreter test" {
-//     const allocator = std.testing.allocator;
-//     const input = "file : path 'test.txt' -> lines | sort";
-//     const lexer = Lexer.init(input);
-//     var parser = Parser.init(allocator, lexer);
-//     var ast = try parser.parse();
-//     defer ast.deinit(allocator);
-//     var interpreter = init(allocator);
-//     try interpreter.interpret(ast);
-//     // Add assertions here to check the interpreter's output or behavior
-// }
+    var interpreter = init(allocator);
+    try interpreter.interpret(ast);
+    // Add assertions here to check the interpreter's output or behavior
+}

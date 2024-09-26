@@ -19,14 +19,16 @@ pub const Error = error{
 };
 
 pub const AST = struct {
-    token: Lexer.Token,
+    lexeme: Lexer.Lexeme,
+    literal: ?[]const u8,
     children: std.ArrayList(*AST),
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator, token: Lexer.Token) !*AST {
+    pub fn init(allocator: std.mem.Allocator, lexeme: Lexer.Lexeme, literal: ?[]const u8) !*AST {
         const ast = try allocator.create(AST);
         ast.* = .{
-            .token = token,
+            .lexeme = lexeme,
+            .literal = if (literal) |data| try allocator.dupe(u8, data) else null,
             .children = std.ArrayList(*AST).init(allocator),
             .allocator = allocator,
         };
@@ -34,6 +36,9 @@ pub const AST = struct {
     }
 
     pub fn deinit(self: *AST, allocator: std.mem.Allocator) void {
+        if (self.literal) |literal| {
+            allocator.free(literal);
+        }
         for (self.children.items) |child| {
             child.deinit(allocator);
         }
@@ -47,11 +52,7 @@ pub fn init(allocator: std.mem.Allocator, lexer: Lexer) Self {
 }
 
 pub fn parse(self: *Self) !*AST {
-    const root = try AST.init(
-        self.allocator,
-        Lexer.Token{ .left = 0, .right = 0, .lexeme = .{ .special = .module } },
-    );
-    errdefer root.deinit(self.allocator);
+    const root = try AST.init(self.allocator, .{ .special = .module }, null);
 
     while (true) {
         const token = self.lexer.next();
@@ -59,7 +60,9 @@ pub fn parse(self: *Self) !*AST {
             .keyword => |lexeme| try self.parseKeyword(lexeme, token),
             .special => |lexeme| switch (lexeme) {
                 .eof => break,
-                else => return Error.InvalidSpecialToken,
+                else => {
+                    return Error.InvalidSpecialToken;
+                },
             },
             else => return Error.InvalidTokenTag,
         };
@@ -70,7 +73,7 @@ pub fn parse(self: *Self) !*AST {
 }
 
 pub fn parseKeyword(self: *Self, keyword: Lexer.Lexeme.Keyword, token: Lexer.Token) !*AST {
-    const root = try AST.init(self.allocator, token);
+    const root = try AST.init(self.allocator, token.lexeme, self.lexer.read(token));
 
     var symbol = self.lexer.next();
     try expectSymbol(symbol, .colon);
@@ -122,7 +125,7 @@ pub fn parseLiteral(self: *Self, keyword: Lexer.Lexeme.Keyword, token: Lexer.Tok
         .float => expectLiteral(token, .float),
         .string => expectLiteral(token, .string),
     };
-    return try AST.init(self.allocator, token);
+    return try AST.init(self.allocator, token.lexeme, self.lexer.read(token));
 }
 
 pub fn isOperator(token: Lexer.Token, expected: Lexer.Lexeme.Operator) bool {
@@ -156,7 +159,7 @@ pub fn parseOperator(self: *Self, keyword: Lexer.Lexeme.Keyword, token: Lexer.To
     };
 
     if (!declared) return Error.InvalidOperatorMethod;
-    return try AST.init(self.allocator, token);
+    return try AST.init(self.allocator, token.lexeme, self.lexer.read(token));
 }
 
 test "Parse single file expression" {
