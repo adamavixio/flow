@@ -13,91 +13,42 @@ pub const Token = struct {
 };
 
 pub const Lexeme = union(enum) {
-    keyword: enum {
-        file,
-        path,
-        lines,
-        print,
-    },
-    symbol: enum {
+    symbol: Symbol,
+    keyword: Keyword,
+    literal: Literal,
+    operator: Operator,
+    special: Special,
+
+    pub const Keyword = enum {
+        int,
+        float,
+        string,
+    };
+
+    pub const Symbol = enum {
         arrow,
         chain,
         colon,
         pipe,
-    },
-    operator: enum {
-        sort,
-        unique,
-    },
-    literal: enum {
+    };
+
+    pub const Literal = enum {
         int,
         float,
         string,
-    },
-    special: enum {
+    };
+
+    pub const Operator = enum {
+        sort,
+        unique,
+    };
+
+    pub const Special = enum {
         module,
         invalid,
         eof,
-    },
-
-    pub const Tag = std.meta.FieldEnum(Lexeme);
-
-    pub const Value = blk: {
-        var index: usize = 0;
-        var fields: []const std.builtin.Type.EnumField = &.{};
-        for (std.meta.fields(Lexeme)) |union_field| {
-            const FieldType = union_field.type;
-            for (std.meta.fields(FieldType)) |enum_field| {
-                const new_field = std.builtin.Type.EnumField{
-                    .name = enum_field.name,
-                    .value = index,
-                };
-                fields = fields ++ &[_]std.builtin.Type.EnumField{new_field};
-                index += 1;
-            }
-        }
-        break :blk @Type(.{
-            .Enum = .{
-                .tag_type = std.math.IntFittingRange(0, fields.len - 1),
-                .fields = fields,
-                .decls = &.{},
-                .is_exhaustive = true,
-            },
-        });
     };
-
-    pub fn isTag(self: Lexeme, tag: Tag) bool {
-        return std.meta.activeTag(self) == tag;
-    }
-
-    pub fn isValue(self: Lexeme, value: Value) bool {
-        switch (self) {
-            inline else => |field| {
-                return std.mem.eql(u8, @tagName(field), @tagName(value));
-            },
-        }
-    }
 };
-
-test "lexeme" {
-    {
-        const lexeme = Lexeme{ .keyword = .file };
-        try std.testing.expect(lexeme.isTag(.keyword));
-        try std.testing.expect(!lexeme.isTag(.symbol));
-        try std.testing.expect(!lexeme.isTag(.operator));
-        try std.testing.expect(!lexeme.isTag(.literal));
-        try std.testing.expect(!lexeme.isTag(.special));
-    }
-
-    {
-        const lexeme = Lexeme{ .keyword = .file };
-        try std.testing.expect(lexeme.isValue(.file));
-        try std.testing.expect(!lexeme.isValue(.path));
-        try std.testing.expect(!lexeme.isValue(.lines));
-        try std.testing.expect(!lexeme.isValue(.arrow));
-        try std.testing.expect(!lexeme.isValue(.chain));
-    }
-}
 
 pub const State = enum {
     init,
@@ -110,9 +61,7 @@ pub const State = enum {
 };
 
 pub fn init(input: [:0]const u8) Self {
-    return Self{
-        .input = input,
-    };
+    return .{ .input = input };
 }
 
 pub fn next(self: *Self) Token {
@@ -154,10 +103,11 @@ pub fn next(self: *Self) Token {
                 0, ' ', '\n', '\t', '\r' => {
                     lexeme = blk: {
                         const string = self.input[self.left..self.right];
-                        if (std.mem.eql(u8, string, "file")) break :blk .{ .keyword = .file };
-                        if (std.mem.eql(u8, string, "path")) break :blk .{ .keyword = .path };
-                        if (std.mem.eql(u8, string, "lines")) break :blk .{ .keyword = .lines };
+                        if (std.mem.eql(u8, string, "int")) break :blk .{ .keyword = .int };
+                        if (std.mem.eql(u8, string, "float")) break :blk .{ .keyword = .float };
+                        if (std.mem.eql(u8, string, "string")) break :blk .{ .keyword = .string };
                         if (std.mem.eql(u8, string, "sort")) break :blk .{ .operator = .sort };
+                        if (std.mem.eql(u8, string, "unique")) break :blk .{ .operator = .unique };
                         break :blk .{ .special = .invalid };
                     };
                     break;
@@ -264,50 +214,37 @@ pub fn next(self: *Self) Token {
     };
 }
 
+pub fn read(self: *Self, token: Token) []const u8 {
+    return self.input[token.left..token.right];
+}
+
 test "keyword" {
     {
-        var lexer = init("file path");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 4, .lexeme = .{ .keyword = .file } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 5, .right = 9, .lexeme = .{ .keyword = .path } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
+        var lexer = init("int float string");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 3, .lexeme = .{ .keyword = .int } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 4, .right = 9, .lexeme = .{ .keyword = .float } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 10, .right = 16, .lexeme = .{ .keyword = .string } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 16, .right = 16, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
-        var lexer = init(" file path");
-        try std.testing.expectEqual(Token{ .left = 1, .right = 5, .lexeme = .{ .keyword = .file } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 6, .right = 10, .lexeme = .{ .keyword = .path } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
+        var lexer = init(" int float string ");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 4, .lexeme = .{ .keyword = .int } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 5, .right = 10, .lexeme = .{ .keyword = .float } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 11, .right = 17, .lexeme = .{ .keyword = .string } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 18, .right = 18, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
-        var lexer = init("file path ");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 4, .lexeme = .{ .keyword = .file } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 5, .right = 9, .lexeme = .{ .keyword = .path } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
+        var lexer = init("intfloatstring");
+        try std.testing.expectEqual(Token{ .left = 0, .right = 14, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 14, .right = 14, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 
     {
-        var lexer = init("filepath");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 8, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 8, .right = 8, .lexeme = .{ .special = .eof } }, lexer.next());
-    }
-
-    {
-        var lexer = init(" filepath");
-        try std.testing.expectEqual(Token{ .left = 1, .right = 9, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
-    }
-
-    {
-        var lexer = init("filepath ");
-        try std.testing.expectEqual(Token{ .left = 0, .right = 8, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 9, .right = 9, .lexeme = .{ .special = .eof } }, lexer.next());
-    }
-
-    {
-        var lexer = init(" filepath ");
-        try std.testing.expectEqual(Token{ .left = 1, .right = 9, .lexeme = .{ .special = .invalid } }, lexer.next());
-        try std.testing.expectEqual(Token{ .left = 10, .right = 10, .lexeme = .{ .special = .eof } }, lexer.next());
+        var lexer = init(" intfloatstring ");
+        try std.testing.expectEqual(Token{ .left = 1, .right = 15, .lexeme = .{ .special = .invalid } }, lexer.next());
+        try std.testing.expectEqual(Token{ .left = 16, .right = 16, .lexeme = .{ .special = .eof } }, lexer.next());
     }
 }
 

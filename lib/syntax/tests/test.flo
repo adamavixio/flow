@@ -1,0 +1,8 @@
+file : path 'path_1' <> path 'path_2' -> lines | sort | unique
+file : path 'path_3' <> path 'path_4' -> lines  
+
+// test
+
+int : 123 
+float : 123.456 
+string : 'string' | sort asc | unique

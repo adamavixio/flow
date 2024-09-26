@@ -1,0 +1,76 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "flow",
+  "patterns": [
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#literals"
+    },
+    {
+      "include": "#special"
+    }
+  ],
+  "repository": {
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.flo",
+          "match": "\\b(string|int|float)\\b(?= \\:)"
+        },
+        {
+          "name": "entity.name.class",
+          "match": "\\b(file|path)\\b(?= \\:)"
+        },
+        {
+          "name": "entity.name.function.flo",
+          "match": "\\b(sort|unique)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.flo",
+          "match": "\\s(->|<>|:|\\|)\\s"
+        }
+      ]
+    },
+    "literals": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.flo",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.flo",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "constant.numeric.flo",
+          "match": "\\b\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.float.flo",
+          "match": "\\b\\d+\\.\\d+\\b"
+        }
+      ]
+    },
+    "special": {
+      "patterns": [
+        {
+          "name": "comment",
+          "match": "//.+"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.flo"
+}

@@ -1,0 +1,58 @@
+{
+  "name": "flow-language",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adamavixio/flow",
+    "directory": "lib/highlight"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "flow",
+        "aliases": [
+          "flow",
+          "Flow"
+        ],
+        "extensions": [
+          ".flo"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "flow",
+        "scopeName": "source.flo",
+        "path": "./syntaxes/language.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "Flow",
+        "uiTheme": "vs-dark",
+        "path": "./themes/color-theme.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.7.0",
+    "@vscode/vsce": "^3.1.0"
+  },
+  "description": "Syntax highlighting for Flow scripting language",
+  "displayName": "Flow Language",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "publisher": "avix",
+  "scripts": {
+    "dev": "bun run clean && bun run build && bun run install",
+    "build": "bun run build:theme && bun vsce package",
+    "build:theme": "bun run scripts/theme.ts ./configs/color-theme.json ./themes/color-theme.json",
+    "clean": "rm -rf flow-language-0.0.1.vsix && code --uninstall-extension avix.flow-language || true",
+    "install": "code --install-extension flow-language-0.0.1.vsix"
+  }
+}

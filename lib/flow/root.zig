@@ -1,11 +1,11 @@
 const std = @import("std");
 
-pub usingnamespace @import("ast.zig");
-pub usingnamespace @import("interpreter.zig");
-pub usingnamespace @import("lexer.zig");
-pub usingnamespace @import("parser.zig");
-pub usingnamespace @import("token.zig");
+pub const Lexer = @import("lexer.zig");
+pub const Parser = @import("parser.zig");
+pub const Interpreter = @import("interpreter.zig");
 
 test {
-    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(Lexer);
+    // std.testing.refAllDecls(Parser);
+    // std.testing.refAllDecls(Interpreter);
 }

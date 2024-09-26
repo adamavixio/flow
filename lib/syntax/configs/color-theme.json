@@ -1,0 +1,23 @@
+{
+    "themeType": "dark",
+    "themeName": "Custom Dark Blue-Black Theme",
+    "background": {
+        "primary": [ 220, 40, 5 ],
+        "secondary": [ 220, 40, 10 ]
+    },
+    "language": {
+        "type": [ 190, 100, 50 ],
+        "operator": [ 160, 100, 50 ],
+        "value": [ 220, 100, 100 ],
+        "function": [ 200, 100, 50 ],
+        "parameter": [ 195, 100, 50 ],
+        "comment": [ 220, 0, 50 ],
+        "constant": [ 189, 93, 44 ],
+        "entity": [ 165, 95, 46 ],
+        "invalid": [ 338, 100, 68 ],
+        "storage": [ 250, 100, 50 ],
+        "string": [ 189, 93, 44 ],
+        "support": [ 219, 22, 78 ],
+        "variable": [ 250, 100, 50 ]
+    }
+}

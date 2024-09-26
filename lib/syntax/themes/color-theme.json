@@ -1,0 +1,86 @@
+{
+  "type": "#NaNNaNNaN",
+  "name": "#NaNNaNNaN",
+  "colors": {
+    "activityBar.background": "#080b12",
+    "editor.background": "#080b12",
+    "editorGroupHeader.tabsBackground": "#0f162433",
+    "editorWidget.background": "#0f1624",
+    "input.background": "#080b12",
+    "panel.background": "#0f1624",
+    "panel.border": "#080b12",
+    "sideBar.background": "#0f1624",
+    "statusBar.background": "#0f1624",
+    "terminal.background": "#080b12",
+    "tab.border": "#080b12",
+    "tab.inactiveBackground": "#0f1624",
+    "titleBar.activeBackground": "#080b12",
+    "titleBar.inactiveBackground": "#0f1624",
+    "widget.shadow": "#080b1233"
+  },
+  "tokenColors": [
+    {
+      "name": "Comment",
+      "scope": "comment",
+      "settings": {
+        "foreground": "#808080"
+      }
+    },
+    {
+      "name": "Constant",
+      "scope": "constant",
+      "settings": {
+        "foreground": "#ffffff"
+      }
+    },
+    {
+      "name": "Entity",
+      "scope": "entity",
+      "settings": {
+        "foreground": "#00d5ff"
+      }
+    },
+    {
+      "name": "Entity Name Function",
+      "scope": "entity.name.function",
+      "settings": {
+        "foreground": "#00aaff"
+      }
+    },
+    {
+      "name": "Invalid",
+      "scope": "invalid",
+      "settings": {
+        "foreground": "#ff5c98"
+      }
+    },
+    {
+      "name": "Keyword Operator",
+      "scope": "keyword.operator",
+      "settings": {
+        "foreground": "#00ffaa"
+      }
+    },
+    {
+      "name": "String",
+      "scope": "string",
+      "settings": {
+        "foreground": "#ffffff"
+      }
+    },
+    {
+      "name": "Support",
+      "scope": "support",
+      "settings": {
+        "foreground": "#bbc3d3"
+      }
+    },
+    {
+      "name": "Variable Parameter",
+      "scope": "variable.parameter",
+      "settings": {
+        "foreground": "#00bfff"
+      }
+    }
+  ]
+}

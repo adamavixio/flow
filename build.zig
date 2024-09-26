@@ -8,26 +8,19 @@ pub fn build(b: *std.Build) void {
     // Modules
     //
 
-    const module_math = b.addModule("math", .{
-        .root_source_file = b.path("lib/math/root.zig"),
+    const module_type = b.addModule("type", .{
+        .root_source_file = b.path("lib/type/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const module_container = b.addModule("container", .{
-        .root_source_file = b.path("lib/container/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const module_flow = b.addModule("flow", .{
+    const module_flow = b.addModule("core", .{
         .root_source_file = b.path("lib/flow/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    module_container.addImport("math", module_math);
-    module_container.addImport("container", module_container);
+    module_flow.addImport("type", module_type);
 
     //
     // Executables
@@ -46,29 +39,26 @@ pub fn build(b: *std.Build) void {
     // Tests
     //
 
-    const test_module_math = b.addTest(.{
-        .root_source_file = b.path("lib/math/root.zig"),
+    const module_type_test = b.addTest(.{
+        .root_source_file = b.path("lib/type/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const test_module_container = b.addTest(.{
-        .root_source_file = b.path("lib/container/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const test_module_flow = b.addTest(.{
+    const module_flow_test = b.addTest(.{
         .root_source_file = b.path("lib/flow/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const test_executable_flow = b.addTest(.{
+    const executable_flow_test = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    module_flow_test.root_module.addImport("type", module_type);
+    executable_flow_test.root_module.addImport("flow", module_flow);
 
     //
     // Install
@@ -84,10 +74,9 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
 
-    const run_test_module_math = b.addRunArtifact(test_module_math);
-    const run_test_module_container = b.addRunArtifact(test_module_container);
-    const run_test_module_flow = b.addRunArtifact(test_module_flow);
-    const run_test_executable_flow = b.addRunArtifact(test_executable_flow);
+    const module_flow_test_run = b.addRunArtifact(module_flow_test);
+    const module_type_test_run = b.addRunArtifact(module_type_test);
+    const executable_flow_test_run = b.addRunArtifact(executable_flow_test);
 
     //
     // Steps
@@ -97,8 +86,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_test_module_math.step);
-    test_step.dependOn(&run_test_module_container.step);
-    test_step.dependOn(&run_test_module_flow.step);
-    test_step.dependOn(&run_test_executable_flow.step);
+    test_step.dependOn(&module_flow_test_run.step);
+    test_step.dependOn(&module_type_test_run.step);
+    test_step.dependOn(&executable_flow_test_run.step);
 }
