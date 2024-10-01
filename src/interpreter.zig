@@ -8,14 +8,6 @@ pub const Self = @This();
 
 allocator: std.mem.Allocator,
 
-pub const Error = error{
-    UnsupportedNode,
-    UnsupportedKeyword,
-    UnsupportedLiteral,
-    UnsupportedSpecial,
-    ExecutionError,
-} || std.mem.Allocator.Error;
-
 pub const Primitive = union(enum) {
     int: Type.Primitive.Int,
     float: Type.Primitive.Float,
@@ -30,6 +22,14 @@ pub const Primitive = union(enum) {
     }
 };
 
+pub const Error = error{
+    UnsupportedNode,
+    UnsupportedKeyword,
+    UnsupportedLiteral,
+    UnsupportedSpecial,
+    ExecutionError,
+} || std.mem.Allocator.Error;
+
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{ .allocator = allocator };
 }
@@ -39,7 +39,7 @@ pub fn interpret(self: *Self, ast: *Parser.AST) Error!void {
 }
 
 fn executeNode(self: *Self, node: *Parser.AST) Error!void {
-    switch (node.lexeme) {
+    switch (node.token.tag) {
         .keyword => try self.executeKeyword(node),
         .special => |lexeme| switch (lexeme) {
             .module => try self.executeModule(node),
@@ -62,13 +62,18 @@ fn executeModule(self: *Self, node: *Parser.AST) Error!void {
 }
 
 fn executeKeyword(self: *Self, node: *Parser.AST) Error!void {
+    switch (node.token.tag) {
+        .keyword => |keyword| switch (keyword) {
+            .int, .float, .string => try self.executeLiteral(),
+        },
+    }
     var literals = std.ArrayList(*Parser.AST).init(self.allocator);
     defer literals.deinit();
 
     var operators = std.ArrayList(*Parser.AST).init(self.allocator);
     defer operators.deinit();
 
-    for (node.children.items) |child| switch (child.lexeme) {
+    for (node.children.items) |child| switch (child.token.tag) {
         .literal => try literals.append(child),
         .operator => try operators.append(child),
         else => return Error.UnsupportedNode,
@@ -93,9 +98,15 @@ fn executeLiteral(self: *Self, parent: *Parser.AST, child: *Parser.AST) Error!Pr
     const literal = child.literal orelse return Error.ExecutionError;
     return switch (parent.lexeme) {
         .keyword => |keyword| switch (keyword) {
-            .int => .{ .int = try Type.Primitive.Int.init(self.allocator, literal) },
-            .float => .{ .float = try Type.Primitive.Float.init(self.allocator, literal) },
-            .string => .{ .string = try Type.Primitive.String.init(self.allocator, trimQuotes(literal)) },
+            .int => .{
+                .int = try Type.Primitive.Int.init(self.allocator, literal),
+            },
+            .float => .{
+                .float = try Type.Primitive.Float.init(self.allocator, literal),
+            },
+            .string => .{
+                .string = try Type.Primitive.String.init(self.allocator, trimQuotes(literal)),
+            },
         },
         else => error.UnsupportedNode,
     };
