@@ -122,7 +122,7 @@ fn trimQuotes(str: []const u8) []const u8 {
 test "Interpreter test" {
     const allocator = std.testing.allocator;
 
-    const input = "string : 'ccbbaa' <> 'aabbcc' | sort | unique";
+    const input = "string : 'ccbbaa' <> 'aabbcc' | sort | unique -> ";
     const lexer = Lexer.init(input);
 
     var parser = Parser.init(allocator, lexer);
