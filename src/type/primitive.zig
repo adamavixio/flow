@@ -1,383 +1,300 @@
 const std = @import("std");
 
-pub const Error = error{
-    InvalidLiteral,
+pub const Tag = union(enum) {
+    i8: i8,
+    i16: i16,
+    i32: i32,
+    i64: i64,
+    i128: i128,
+    int: isize,
+
+    u8: u8,
+    u16: u16,
+    u32: u32,
+    u64: u64,
+    u128: u128,
+    uint: usize,
+
+    f16: f16,
+    f32: f32,
+    f64: f64,
+    f128: f128,
+    float: f32,
+
+    string: []u8,
+
+    pub fn Type(string: []const u8) type {
+        return std.meta.FieldType(Tag, @field(Tag, string));
+    }
 };
 
-pub const Primitive = union(enum) {
-    i8: Int(i8),
-    i16: Int(i16),
-    i32: Int(i32),
-    i64: Int(i64),
-    i128: Int(i128),
-    int: Int(isize),
-    u8: Int(u8),
-    u16: Int(u16),
-    u32: Int(u32),
-    u64: Int(u64),
-    u128: Int(u128),
-    uint: Int(usize),
-    f16: Float(f16),
-    f32: Float(f32),
-    f64: Float(f64),
-    f80: Float(f80),
-    f128: Float(f128),
-    string: String,
-
-    pub const Tags = std.StaticStringMap(type);
-    pub const tags = Tags.initComptime(.{
-        .{ "i8", Int(i8) },
-        .{ "i16", Int(i16) },
-        .{ "i32", Int(i32) },
-        .{ "i64", Int(i64) },
-        .{ "i128", Int(i128) },
-        .{ "int", Int(isize) },
-        .{ "u8", Int(u8) },
-        .{ "u16", Int(u16) },
-        .{ "u32", Int(u32) },
-        .{ "u64", Int(u64) },
-        .{ "u128", Int(u128) },
-        .{ "uint", Int(usize) },
-        .{ "f16", Float(f16) },
-        .{ "f32", Float(f32) },
-        .{ "f64", Float(f64) },
-        .{ "f80", Float(f80) },
-        .{ "f128", Float(f128) },
-        .{ "string", String },
-    });
-};
-
-pub fn hasTransformable(comptime tag: Meta(Primitive).Tag, name: []const u8) bool {
-    const Type = Meta(Primitive).Type(tag);
-    if (!@hasDecl(Type, "Transformable")) return false;
-    for (std.meta.declarations(Type.Transformable)) |declaration| {
-        if (std.mem.eql(u8, declaration.name, name)) return true;
-    }
-    return false;
-}
-
-pub fn hasMutatable(comptime tag: Meta(Primitive).Tag, name: []const u8) bool {
-    const Type = Meta(Primitive).Type(tag);
-    if (!@hasDecl(Type, "Mutatable")) return false;
-    for (std.meta.declarations(Type.Transformable)) |declaration| {
-        if (std.mem.eql(u8, declaration.name, name)) return true;
-    }
-    return false;
-}
-
-pub fn hasTerminable(comptime tag: Meta(Primitive).Tag, name: []const u8) bool {
-    const Type = Meta(Primitive).Type(tag);
-    if (!@hasDecl(Type, "Terminable")) return false;
-    for (std.meta.declarations(Type.Transformable)) |declaration| {
-        if (std.mem.eql(u8, declaration.name, name)) return true;
-    }
-    return false;
-}
-
-test "Traits" {
-    try std.testing.expect(Primitive.hasTransformable(.u8, "string"));
-    try std.testing.expect(Primitive.hasMutatable(.u8));
-    try std.testing.expect(Primitive.hasTerminable(.u8));
-}
-
-pub fn Int(comptime T: type) type {
+pub fn Type(comptime Value: type) type {
     return struct {
         const Self = @This();
 
-        value: T,
+        value: Value,
+        allocatable: Allocatable(Self, Value) = .{},
+        mutatable: Mutatable(Self, Value) = .{},
+        transformable: Transformable(Self, Value) = .{},
+        terminable: Terminable(Self, Value) = .{},
 
-        pub fn init(allocator: std.mem.Allocator, value: []const u8) !*Self {
-            const self = try allocator.create(Self);
-            self.* = .{ .value = try std.fmt.parseInt(T, value, 10) };
-            return self;
+        pub fn init(allocator: std.mem.Allocator, value: Value) !*Self {
+            return Allocatable(Self, Value).init(allocator, value);
         }
 
         pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-            allocator.destroy(self);
+            self.allocatable.deinit(allocator);
         }
-
-        pub const Transformable = struct {
-            pub fn string(self: *Self, allocator: std.mem.Allocator) !*String {
-                defer self.deinit(allocator);
-                const str = try std.fmt.allocPrint(allocator, "{d}", .{self.value});
-                return String.init(allocator, str);
-            }
-        };
-
-        pub const Mutatable = struct {
-            pub fn add(self: *Self, value: T) void {
-                self.value += value;
-            }
-
-            pub fn sub(self: *Self, value: T) void {
-                self.value -= value;
-            }
-
-            pub fn mul(self: *Self, value: T) void {
-                self.value += value;
-            }
-
-            pub fn div(self: *Self, value: T) void {
-                self.value = @divFloor(self.value, value);
-            }
-        };
-
-        pub const Terminable = struct {
-            pub fn print(self: *Self) void {
-                std.debug.print("{d}\n", .{self.value});
-            }
-        };
     };
 }
 
-pub fn Float(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        value: T,
-
-        pub fn init(allocator: std.mem.Allocator, value: []const u8) !*Self {
-            const self = try allocator.create(Self);
-            self.* = .{ .value = try std.fmt.parseInt(T, value, 10) };
-            return self;
-        }
-
-        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-            allocator.destroy(self);
-        }
-
-        pub const Transformable = struct {
-            pub fn string(self: *Self, allocator: std.mem.Allocator) !*String {
-                defer self.deinit(allocator);
-                const str = try std.fmt.allocPrint(allocator, "{d}", .{self.value});
-                return String.init(allocator, str);
+pub fn Allocatable(comptime T: type, comptime Value: type) type {
+    return switch (@typeInfo(Value)) {
+        .Int => struct {
+            const Self = @This();
+            pub fn init(allocator: std.mem.Allocator, value: Value) !*T {
+                const self = try allocator.create(T);
+                self.*.value = value;
+                return self;
             }
-        };
-
-        pub const Mutatable = struct {
-            pub fn add(self: *Self, value: T) void {
-                self.value += value;
+            pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+                const pointer: *T = @alignCast(@fieldParentPtr("allocatable", self));
+                allocator.destroy(pointer);
             }
-
-            pub fn sub(self: *Self, value: T) void {
-                self.value -= value;
+        },
+        .Float => struct {
+            const Self = @This();
+            pub fn init(allocator: std.mem.Allocator, value: Value) !*T {
+                const self = try allocator.create(T);
+                self.*.value = value;
+                return self;
             }
-
-            pub fn mul(self: *Self, value: T) void {
-                self.value += value;
+            pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+                const pointer: *T = @alignCast(@fieldParentPtr("allocatable", self));
+                allocator.destroy(pointer);
             }
-
-            pub fn div(self: *Self, value: T) void {
-                self.value /= value;
-            }
-        };
-
-        pub const Terminable = struct {
-            pub fn print(self: *Self) void {
-                std.debug.print("{d}\n", .{self.value});
-            }
-        };
-    };
-}
-
-pub const String = struct {
-    const Self = @This();
-
-    value: []u8,
-
-    pub fn init(allocator: std.mem.Allocator, value: []const u8) !*Self {
-        const self = try allocator.create(Self);
-        self.* = .{ .value = try allocator.dupe(u8, value) };
-        return self;
-    }
-
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        allocator.free(self.value);
-        allocator.destroy(self);
-    }
-
-    pub const Transformable = struct {
-        pub fn len(self: *Self) usize {
-            return self.value.len;
-        }
-    };
-
-    pub const Mutatable = struct {
-        pub fn sort(self: *Self, order: enum { asc, desc }) void {
-            std.mem.sort(u8, self.data, {}, switch (order) {
-                .asc => std.sort.asc(u8),
-                .desc => std.sort.desc(u8),
-            });
-        }
-
-        pub fn unique(self: *Self) !void {
-            var seen = std.AutoHashMap(u8, void).init(self.allocator);
-            defer seen.deinit();
-
-            var write_index: usize = 0;
-            for (0..self.len) |read_index| {
-                const char = self.data[read_index];
-                if (!seen.contains(char)) {
-                    try seen.put(char, {});
-                    self.data[write_index] = char;
-                    write_index += 1;
+        },
+        .Pointer => |ptr_info| switch (ptr_info.child) {
+            u8 => struct {
+                const Self = @This();
+                pub fn init(allocator: std.mem.Allocator, value: Value) !*T {
+                    const self = try allocator.create(T);
+                    self.*.value = try allocator.dupe(u8, value);
+                    return self;
                 }
-            }
-
-            if (write_index < self.data.len) {
-                self.len = write_index;
-                self.data = try self.allocator.realloc(self.data, write_index);
-            }
-        }
+                pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+                    const pointer: *T = @alignCast(@fieldParentPtr("allocatable", self));
+                    allocator.free(pointer.value);
+                    allocator.destroy(pointer);
+                }
+            },
+            else => @compileError("Unsupported pointer type"),
+        },
+        else => @compileError("Unsupported type"),
     };
+}
 
-    pub const Terminable = struct {
-        pub fn print(self: *Self) void {
-            std.debug.print("{any}\n", .{self.value});
-        }
+pub fn Mutatable(comptime T: type, comptime Value: type) type {
+    return switch (@typeInfo(Value)) {
+        .Int, .Float => struct {
+            const Self = @This();
+            pub fn add(self: *Self, value: Value) void {
+                const pointer: *T = @alignCast(@fieldParentPtr("mutatable", self));
+                pointer.value += value;
+            }
+            pub fn sub(self: *Self, value: Value) void {
+                const pointer: *T = @alignCast(@fieldParentPtr("mutatable", self));
+                pointer.value -= value;
+            }
+            pub fn mul(self: *Self, value: Value) void {
+                const pointer: *T = @alignCast(@fieldParentPtr("mutatable", self));
+                pointer.value *= value;
+            }
+            pub fn div(self: *Self, value: Value) void {
+                const pointer: *T = @alignCast(@fieldParentPtr("mutatable", self));
+                pointer.value = @divTrunc(pointer.value, value);
+            }
+        },
+        .Pointer => |info| switch (info.child) {
+            u8 => struct {
+                const Self = @This();
+                pub fn upper(self: *Self) void {
+                    const pointer: *T = @alignCast(@fieldParentPtr("mutatable", self));
+                    for (pointer.value) |*c| {
+                        c.* = std.ascii.toUpper(c.*);
+                    }
+                }
+                pub fn lower(self: *Self) void {
+                    const pointer: *T = @alignCast(@fieldParentPtr("mutatable", self));
+                    for (pointer.value) |*c| {
+                        c.* = std.ascii.toLower(c.*);
+                    }
+                }
+            },
+            else => @compileError("Unsupported pointer type"),
+        },
+        else => @compileError("Unsupported type"),
     };
-};
+}
 
-pub fn Meta(comptime T: type) type {
-    switch (@typeInfo(T)) {
-        .Pointer => return struct {
-            const child = std.meta.Child(T);
-        },
-        .Union => return struct {
-            const Tag = std.meta.FieldEnum(T);
-
-            pub fn Type(comptime tag: Tag) type {
-                return std.meta.FieldType(T, tag);
-            }
-
-            pub fn hasDeclaration(comptime tag: Tag) []const u8 {
-                return std.meta.fieldInfo(T, tag).name;
-            }
-
-            pub fn name(comptime tag: Tag) []const u8 {
-                return std.meta.fieldInfo(T, tag).name;
+pub fn Transformable(comptime T: type, comptime Value: type) type {
+    return switch (@typeInfo(Value)) {
+        .Int, .Float => struct {
+            const Self = @This();
+            pub fn string(self: *Self, allocator: std.mem.Allocator) !*Type([]u8) {
+                const pointer: *T = @alignCast(@fieldParentPtr("transformable", self));
+                const transform = try std.fmt.allocPrint(allocator, "{d}", .{pointer.value});
+                defer allocator.free(transform);
+                const value = try Type([]u8).init(allocator, transform);
+                return value;
             }
         },
-        .Struct => return struct {
-            const Tag = std.meta.DeclEnum(T);
+        .Pointer => |info| switch (info.child) {
+            u8 => struct {
+                const Self = @This();
+                pub fn len(self: *Self, allocator: std.mem.Allocator) !*Type(usize) {
+                    const pointer: *T = @alignCast(@fieldParentPtr("transformable", self));
+                    const value = try Type(usize).init(allocator, pointer.value.len);
+                    return value;
+                }
+            },
+            else => @compileError("Unsupported pointer type"),
+        },
+        else => @compileError("Unsupported type"),
+    };
+}
 
-            pub fn Type(comptime tag: Tag) type {
-                return @TypeOf(@field(T, @tagName(tag)));
-            }
-
-            pub fn hasFunction(comptime name: []const u8) bool {
-                return std.meta.hasFn(T, name);
+pub fn Terminable(comptime T: type, comptime Value: type) type {
+    return switch (@typeInfo(Value)) {
+        .Int, .Float => struct {
+            const Self = @This();
+            pub fn print(self: *Self) void {
+                const pointer: *T = @alignCast(@fieldParentPtr("terminable", self));
+                std.debug.print("{d}\n", .{pointer.value});
             }
         },
-        else => @compileError("unsupported type: " ++ @typeName(T)),
+        .Pointer => |info| switch (info.child) {
+            u8 => struct {
+                const Self = @This();
+                pub fn print(self: *Self) !*Type(usize) {
+                    const pointer: *T = @alignCast(@fieldParentPtr("terminable", self));
+                    std.debug.print("{s}\n", .{pointer.value});
+                }
+            },
+            else => @compileError("Unsupported pointer type"),
+        },
+        else => @compileError("Unsupported type"),
+    };
+}
+
+test "integer tags" {
+    inline for ([_]struct { type, []const u8 }{
+        .{ i8, "i8" },
+        .{ i16, "i16" },
+        .{ i32, "i32" },
+        .{ i64, "i64" },
+        .{ i128, "i128" },
+        .{ isize, "int" },
+        .{ u8, "u8" },
+        .{ u16, "u16" },
+        .{ u32, "u32" },
+        .{ u64, "u64" },
+        .{ u128, "u128" },
+        .{ usize, "uint" },
+    }) |case| {
+        try std.testing.expectEqual(case[0], Tag.Type(case[1]));
     }
 }
 
-// test "primitive" {
-//     {
-//         const allocator = std.testing.allocator;
-//         var int = Primitive.init(allocator, "usize", "10");
+test "float tags" {
+    inline for ([_]struct { type, []const u8 }{
+        .{ f16, "f16" },
+        .{ f32, "f32" },
+        .{ f64, "f64" },
+        .{ f128, "f128" },
+        .{ f32, "float" },
+    }) |case| {
+        try std.testing.expectEqual(case[0], Tag.Type(case[1]));
+    }
+}
 
-//         try int.init(std.testing.allocator, "10");
-//         defer int.deinit(std.testing.allocator);
+test "string tags" {
+    inline for ([_]struct { type, []const u8 }{
+        .{ []u8, "string" },
+    }) |case| {
+        try std.testing.expectEqual(case[0], Tag.Type(case[1]));
+    }
+}
 
-//         const output = try int.print(std.testing.allocator);
-//         defer std.testing.allocator.free(output);
-//         std.debug.print("{s}\n", .{output});
-//     }
+test "integer primitive" {
+    const allocator = std.testing.allocator;
+    inline for ([_][]const u8{ "i8", "i16", "i32", "i64", "i128", "int", "u8", "u16", "u32", "u64", "u128", "uint" }) |name| {
+        var integer = try Type(Tag.Type(name)).init(allocator, 0);
+        defer integer.deinit(allocator);
+        try std.testing.expectEqual(0, integer.value);
+        integer.mutatable.add(10);
+        try std.testing.expectEqual(10, integer.value);
+        integer.mutatable.sub(5);
+        try std.testing.expectEqual(5, integer.value);
+        integer.mutatable.mul(4);
+        try std.testing.expectEqual(20, integer.value);
+        integer.mutatable.div(5);
+        try std.testing.expectEqual(4, integer.value);
+    }
+    inline for ([_][]const u8{ "i8", "i16", "i32", "i64", "i128", "int", "u8", "u16", "u32", "u64", "u128", "uint" }) |name| {
+        var integer = try Type(Tag.Type(name)).init(allocator, 10);
+        defer integer.deinit(allocator);
+        try std.testing.expectEqual(10, integer.value);
+        const string = try integer.transformable.string(allocator);
+        defer string.deinit(allocator);
+        try std.testing.expectEqualStrings("10", string.value);
+    }
+}
 
-//     {
-//         var string = Primitive.init(.string);
+test "float primitive" {
+    const allocator = std.testing.allocator;
+    inline for ([_][]const u8{ "f16", "f32", "f64", "f128" }) |name| {
+        var float = try Type(Tag.Type(name)).init(allocator, 0);
+        defer float.deinit(allocator);
+        try std.testing.expectEqual(0, float.value);
+        float.mutatable.add(10);
+        try std.testing.expectEqual(10, float.value);
+        float.mutatable.sub(5);
+        try std.testing.expectEqual(5, float.value);
+        float.mutatable.mul(4);
+        try std.testing.expectEqual(20, float.value);
+        float.mutatable.div(5);
+        try std.testing.expectEqual(4, float.value);
+    }
+    inline for ([_][]const u8{ "f16", "f32", "f64", "f128" }) |name| {
+        var float = try Type(Tag.Type(name)).init(allocator, 10);
+        defer float.deinit(allocator);
+        try std.testing.expectEqual(10, float.value);
+        const string = try float.transformable.string(allocator);
+        defer string.deinit(allocator);
+        try std.testing.expectEqualStrings("10", string.value);
+    }
+}
 
-//         try string.init(std.testing.allocator, "string");
-//         defer string.deinit(std.testing.allocator);
-
-//         const output = try string.print(std.testing.allocator);
-//         defer std.testing.allocator.free(output);
-//         std.debug.print("{s}\n", .{output});
-//     }
-// }
-
-// pub fn init(allocator: std.mem.Allocator, value: []const u8) Meta(Primitive).Type(tag) {
-//     const Type = Meta(Primitive).Type(tag);
-//     return Type.init(allocator)
-// }
-// };
-
-// pub fn Trait(comptime Type: type) type {
-//     return struct {
-//         pointer: *anyopaque,
-//         transformable: *const Transformable(Type),
-//         mutatable: *const Mutatable(Type),
-//         terminable: *const Terminable(Type),
-
-//         pub fn init(self: *Trait, allocator: std.mem.Allocator, value: []const u8) !void {
-//             self.pointer = try self.transformable.init(allocator, value);
-//         }
-
-//         pub fn len(self: *Trait, allocator: std.mem.Allocator, value: []const u8) !void {
-//             const pointer = self.transformable.len(self.pointer);
-//             self.pointer = try self.transformable.init(allocator, value);
-//         }
-
-//         pub fn deinit(self: Trait, allocator: std.mem.Allocator) void {
-//             self.implementation.deinit(self.pointer, allocator);
-//         }
-
-//         pub fn print(self: Trait, allocator: std.mem.Allocator) ![]const u8 {
-//             return try self.implementation.print(self.pointer, allocator);
-//         }
-//     };
-// }
-
-// pub fn Transformable(comptime Type: type) type {
-//     return struct {
-//         init: *const fn (allocator: std.mem.Allocator, value: []const u8) anyerror!*anyopaque,
-//         len: *const fn (pointer: *anyopaque) *anyopaque,
-
-//         pub fn init(allocator: std.mem.Allocator, value: []const u8) !*anyopaque {
-//             return @ptrCast(@alignCast(try Type.init(allocator, value)));
-//         }
-
-//         pub fn len(pointer: *anyopaque) *anyopaque {
-//             const self: *Type = @ptrCast(@alignCast(pointer));
-//             return self.len();
-//         }
-//     };
-// }
-
-// pub fn Mutatable(comptime Type: type) type {
-//     return struct {
-//         deinit: *const fn (pointer: *anyopaque, allocator: std.mem.Allocator) void,
-//         sort: *const fn (pointer: *anyopaque, order: enum { asc, desc }) void,
-//         unique: *const fn (pointer: *anyopaque, allocator: std.mem.Allocator) anyerror!void,
-
-//         pub const Mutatable = struct {
-//             pub fn deinit(pointer: *anyopaque, allocator: std.mem.Allocator) void {
-//                 const self: *Type = @ptrCast(@alignCast(pointer));
-//                 self.deinit(allocator);
-//             }
-
-//             pub fn sort(pointer: *anyopaque, allocator: std.mem.Allocator) ![]const u8 {
-//                 const self: *Type = @ptrCast(@alignCast(pointer));
-//                 return self.print(allocator);
-//             }
-
-//             pub fn unique(pointer: *anyopaque, allocator: std.mem.Allocator) ![]const u8 {
-//                 const self: *Type = @ptrCast(@alignCast(pointer));
-//                 return self.print(allocator);
-//             }
-//         };
-//     };
-// }
-
-// pub fn Terminable(comptime Type: type) type {
-//     return struct {
-//         print: *const fn (pointer: *anyopaque, allocator: std.mem.Allocator) anyerror![]const u8,
-
-//         pub fn print(pointer: *anyopaque, allocator: std.mem.Allocator) ![]const u8 {
-//             const self: *Type = @ptrCast(@alignCast(pointer));
-//             return self.print(allocator);
-//         }
-//     };
-// }
+test "string primitive" {
+    const allocator = std.testing.allocator;
+    inline for ([_][]const u8{"string"}) |name| {
+        var input = "test".*;
+        var string = try Type(Tag.Type(name)).init(allocator, &input);
+        defer string.deinit(allocator);
+        try std.testing.expectEqualStrings("test", string.value);
+        string.mutatable.upper();
+        try std.testing.expectEqualStrings("TEST", string.value);
+        string.mutatable.lower();
+        try std.testing.expectEqualStrings("test", string.value);
+    }
+    inline for ([_][]const u8{"string"}) |name| {
+        var input = "test".*;
+        var string = try Type(Tag.Type(name)).init(allocator, &input);
+        defer string.deinit(allocator);
+        try std.testing.expectEqualStrings("test", string.value);
+        var integer = try string.transformable.len(allocator);
+        defer integer.deinit(allocator);
+        try std.testing.expectEqual(4, integer.value);
+    }
+}

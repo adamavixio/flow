@@ -1,14 +1,14 @@
 const std = @import("std");
 
-const Self = @This();
-const Primitive = @import("type/primitive.zig").Primitive;
+const Lexer = @This();
+const Token = @import("token.zig");
 
 index: usize,
 buffer: [:0]const u8,
 
 pub const State = enum {
     init,
-    character,
+    identifier,
     zero,
     number,
     number_period,
@@ -25,135 +25,28 @@ pub const State = enum {
     invalid,
 };
 
-pub const Token = union(enum) {
-    keyword: Keyword,
-    symbol: Symbol,
-    operator: Operator,
-    literal: Literal,
-    special: Special,
-
-    const Keyword = union(Primitive.Tag) {
-        i8: Location,
-        i16: Location,
-        i32: Location,
-        i64: Location,
-        i128: Location,
-        int: Location,
-
-        u8: Location,
-        u16: Location,
-        u32: Location,
-        u64: Location,
-        u128: Location,
-        uint: Location,
-
-        f16: Location,
-        f32: Location,
-        f64: Location,
-        f80: Location,
-        f128: Location,
-
-        string: Location,
-    };
-
-    const Symbol = union(enum) {
-        colon: Location,
-    };
-
-    const Operator = union(enum) {
-        arrow: Location,
-        chain: Location,
-        pipe: Location,
-    };
-
-    const Literal = union(enum) {
-        int: Location,
-        float: Location,
-        string: Location,
-        identifier: Location,
-    };
-
-    const Special = union(enum) {
-        module: Location,
-        invalid: Location,
-        eof: Location,
-    };
-
-    pub const Tag = std.meta.FieldEnum(Token);
-
-    pub fn TagType(tag: Tag) type {
-        return std.meta.FieldType(Token, tag);
-    }
-
-    pub fn Lexeme(tag: Tag) type {
-        return std.meta.FieldEnum(TagType(tag));
-    }
-
-    pub const keywords = std.StaticStringMap(Lexeme(.keyword)).initComptime(.{
-        .{ "u8", .u8 },
-        .{ "u16", .u16 },
-        .{ "u32", .u32 },
-        .{ "u64", .u64 },
-        .{ "u128", .u128 },
-        .{ "uint", .uint },
-        .{ "i8", .i8 },
-        .{ "i16", .i16 },
-        .{ "i32", .i32 },
-        .{ "i64", .i64 },
-        .{ "i128", .i128 },
-        .{ "int", .int },
-        .{ "f16", .f16 },
-        .{ "f32", .f32 },
-        .{ "f64", .f64 },
-        .{ "f80", .f80 },
-        .{ "f128", .f128 },
-        .{ "string", .string },
-    });
-
-    pub fn init(comptime tag: Tag, comptime lexeme: Lexeme(tag), location: Location) Token {
-        return @unionInit(Token, @tagName(tag), @unionInit(TagType(tag), @tagName(lexeme), location));
-    }
-
-    pub fn fromString(string: []const u8, location: Location) Token {
-        if (keywords.get(string)) |keyword| switch (keyword) {
-            inline else => |value| return Token.init(.keyword, value, location),
-        };
-        return Token.init(.literal, .identifier, location);
-    }
-};
-
-pub const Location = struct {
-    left: usize,
-    right: usize,
-
-    pub fn init(left: usize, right: usize) Location {
-        return .{
-            .left = left,
-            .right = right,
-        };
-    }
-};
-
-pub fn init(buffer: [:0]const u8) Self {
+pub fn init(buffer: [:0]const u8) Lexer {
     return .{
         .index = 0,
         .buffer = buffer,
     };
 }
 
-pub fn next(self: *Self) Token {
+pub fn next(self: *Lexer) Token {
     var state = State.init;
-    var location = Location.init(self.index, undefined);
+    var token = Token.init(undefined, Token.Location.init(self.index, undefined));
+
     while (true) {
         switch (state) {
             .init => switch (self.buffer[self.index]) {
                 0 => {
-                    location.right = self.index;
-                    return Token.init(.special, .eof, location);
+                    token.lexeme = Token.Lexeme.init(.special, .end_of_frame);
+                    token.location.right = self.index;
+                    break;
                 },
                 'a'...'z' => {
                     self.index += 1;
-                    state = .character;
+                    state = .identifier;
                 },
                 '0' => {
                     self.index += 1;
@@ -185,13 +78,13 @@ pub fn next(self: *Self) Token {
                 },
                 ' ', '\n', '\t', '\r' => {
                     self.index += 1;
-                    location.left = self.index;
+                    token.location.left = self.index;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .character => switch (self.buffer[self.index]) {
+            .identifier => switch (self.buffer[self.index]) {
                 'a'...'z' => {
                     self.index += 1;
                 },
@@ -199,8 +92,9 @@ pub fn next(self: *Self) Token {
                     self.index += 1;
                 },
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.fromString(self.read(location), location);
+                    token.lexeme = Token.Lexeme.init(.literal, .identifier);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -225,8 +119,9 @@ pub fn next(self: *Self) Token {
                     state = .number_period;
                 },
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.literal, .int, location);
+                    token.lexeme = Token.Lexeme.init(.literal, .int);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -247,8 +142,9 @@ pub fn next(self: *Self) Token {
                     state = .float;
                 },
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.literal, .float, location);
+                    token.lexeme = Token.Lexeme.init(.literal, .float);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -281,8 +177,9 @@ pub fn next(self: *Self) Token {
             },
             .quote_quote => switch (self.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.literal, .string, location);
+                    token.lexeme = Token.Lexeme.init(.literal, .string);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -290,8 +187,9 @@ pub fn next(self: *Self) Token {
             },
             .colon => switch (self.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.symbol, .colon, location);
+                    token.lexeme = Token.Lexeme.init(.symbol, .colon);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -299,8 +197,9 @@ pub fn next(self: *Self) Token {
             },
             .pipe => switch (self.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.operator, .pipe, location);
+                    token.lexeme = Token.Lexeme.init(.operator, .pipe);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -317,8 +216,9 @@ pub fn next(self: *Self) Token {
             },
             .left_angle_right_angle => switch (self.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.operator, .chain, location);
+                    token.lexeme = Token.Lexeme.init(.operator, .chain);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -335,8 +235,9 @@ pub fn next(self: *Self) Token {
             },
             .hyphen_right_angle => switch (self.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.operator, .arrow, location);
+                    token.lexeme = Token.Lexeme.init(.operator, .arrow);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     state = .invalid;
@@ -344,8 +245,9 @@ pub fn next(self: *Self) Token {
             },
             .invalid => switch (self.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    location.right = self.index;
-                    return Token.init(.special, .invalid, location);
+                    token.lexeme = Token.Lexeme.init(.special, .invalid);
+                    token.location.right = self.index;
+                    break;
                 },
                 else => {
                     self.index += 1;
@@ -353,153 +255,87 @@ pub fn next(self: *Self) Token {
             },
         }
     }
+
+    return token;
 }
 
-pub fn read(self: Self, location: Location) []const u8 {
+pub fn read(self: Lexer, location: Token.Location) []const u8 {
     return self.buffer[location.left..location.right];
 }
 
 test "whitespace" {
     {
         var lexer = init(" \n\t\r");
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(4, 4)), lexer.next());
-    }
-}
-
-test "keywords" {
-    inline for (std.meta.fields(Token.Keyword)) |field| {
-        const string = field.name;
-        const size = string.len;
-        const lexeme = @field(Token.Keyword, field.name);
-
-        {
-            var lexer = init(string);
-            try std.testing.expectEqual(Token.init(.keyword, lexeme, Location.init(0, size)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size, size)), lexer.next());
-        }
-
-        {
-            var lexer = init(" " ++ string);
-            try std.testing.expectEqual(Token.init(.keyword, lexeme, Location.init(1, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
-        }
-
-        {
-            var lexer = init("x" ++ string);
-            try std.testing.expectEqual(Token.init(.literal, .identifier, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
-        }
-
-        {
-            var lexer = init("!" ++ string);
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
-        }
-
-        {
-            var lexer = init(string ++ " ");
-            try std.testing.expectEqual(Token.init(.keyword, lexeme, Location.init(0, size)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
-        }
-
-        {
-            var lexer = init(string ++ "x");
-            try std.testing.expectEqual(Token.init(.literal, .identifier, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
-        }
-
-        {
-            var lexer = init(string ++ "!");
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
-        }
-
-        {
-            var lexer = init(" " ++ string ++ " ");
-            try std.testing.expectEqual(Token.init(.keyword, lexeme, Location.init(1, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 2, size + 2)), lexer.next());
-        }
-
-        {
-            var lexer = init("x" ++ string ++ "x");
-            try std.testing.expectEqual(Token.init(.literal, .identifier, Location.init(0, size + 2)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 2, size + 2)), lexer.next());
-        }
-
-        {
-            var lexer = init("!" ++ string ++ "!");
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 2)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 2, size + 2)), lexer.next());
-        }
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(4, 4)), lexer.next());
     }
 }
 
 test "symbols" {
-    inline for (std.meta.fields(Token.Symbol)) |field| {
-        const string = switch (@field(Token.Symbol, field.name)) {
+    inline for (std.meta.fields(Token.Lexeme.Symbol)) |field| {
+        const string = switch (@field(Token.Lexeme.Symbol, field.name)) {
             .colon => ":",
         };
         const size = string.len;
-        const lexeme = @field(Token.Symbol, field.name);
+        const lexeme = @field(Token.Lexeme.Symbol, field.name);
 
         {
             var lexer = init(string);
-            try std.testing.expectEqual(Token.init(.symbol, lexeme, Location.init(0, size)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size, size)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.symbol, lexeme), Token.Location.init(0, size)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size, size)), lexer.next());
         }
 
         {
             var lexer = init(" " ++ string);
-            try std.testing.expectEqual(Token.init(.symbol, lexeme, Location.init(1, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.symbol, lexeme), Token.Location.init(1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
         }
 
         {
             var lexer = init("x" ++ string);
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
         }
 
         {
             var lexer = init("!" ++ string);
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
         }
 
         {
             var lexer = init(string ++ " ");
-            try std.testing.expectEqual(Token.init(.symbol, lexeme, Location.init(0, size)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.symbol, lexeme), Token.Location.init(0, size)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
         }
 
         {
             var lexer = init(string ++ "x");
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
         }
 
         {
             var lexer = init(string ++ "!");
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
         }
 
         {
             var lexer = init(" " ++ string ++ " ");
-            try std.testing.expectEqual(Token.init(.symbol, lexeme, Location.init(1, size + 1)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 2, size + 2)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.symbol, lexeme), Token.Location.init(1, size + 1)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 2, size + 2)), lexer.next());
         }
 
         {
             var lexer = init("x" ++ string ++ "x");
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 2)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 2, size + 2)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 2)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 2, size + 2)), lexer.next());
         }
 
         {
             var lexer = init("!" ++ string ++ "!");
-            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, size + 2)), lexer.next());
-            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(size + 2, size + 2)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 2)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 2, size + 2)), lexer.next());
         }
     }
 }
@@ -511,12 +347,12 @@ test "literals" {
             var lexer = init(numbers[i..] ++ numbers[0..i]);
             switch (i) {
                 0 => {
-                    try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 10)), lexer.next());
-                    try std.testing.expectEqual(Token.init(.special, .eof, Location.init(10, 10)), lexer.next());
+                    try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 10)), lexer.next());
+                    try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(10, 10)), lexer.next());
                 },
                 else => {
-                    try std.testing.expectEqual(Token.init(.literal, .int, Location.init(0, 10)), lexer.next());
-                    try std.testing.expectEqual(Token.init(.special, .eof, Location.init(10, 10)), lexer.next());
+                    try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .int), Token.Location.init(0, 10)), lexer.next());
+                    try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(10, 10)), lexer.next());
                 },
             }
         }
@@ -531,27 +367,27 @@ test "literals" {
                 var lexer = init(float);
                 switch (float[10]) {
                     '.' => {
-                        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 11)), lexer.next());
-                        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(11, 11)), lexer.next());
+                        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 11)), lexer.next());
+                        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(11, 11)), lexer.next());
                     },
                     else => switch (float[0]) {
                         '.' => {
-                            try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 11)), lexer.next());
-                            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(11, 11)), lexer.next());
+                            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 11)), lexer.next());
+                            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(11, 11)), lexer.next());
                         },
                         '0' => switch (float[1]) {
                             '.' => {
-                                try std.testing.expectEqual(Token.init(.literal, .float, Location.init(0, 11)), lexer.next());
-                                try std.testing.expectEqual(Token.init(.special, .eof, Location.init(11, 11)), lexer.next());
+                                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .float), Token.Location.init(0, 11)), lexer.next());
+                                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(11, 11)), lexer.next());
                             },
                             else => {
-                                try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 11)), lexer.next());
-                                try std.testing.expectEqual(Token.init(.special, .eof, Location.init(11, 11)), lexer.next());
+                                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 11)), lexer.next());
+                                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(11, 11)), lexer.next());
                             },
                         },
                         else => {
-                            try std.testing.expectEqual(Token.init(.literal, .float, Location.init(0, 11)), lexer.next());
-                            try std.testing.expectEqual(Token.init(.special, .eof, Location.init(11, 11)), lexer.next());
+                            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .float), Token.Location.init(0, 11)), lexer.next());
+                            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(11, 11)), lexer.next());
                         },
                     },
                 }
@@ -560,133 +396,200 @@ test "literals" {
     }
 
     {
-        var lexer = init("'string literal'");
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(0, 16)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(16, 16)), lexer.next());
+        {
+            var lexer = init("'string literal'");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(0, 16)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(16, 16)), lexer.next());
+        }
+
+        {
+            var lexer = init("''");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(0, 2)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(2, 2)), lexer.next());
+        }
+
+        {
+            var lexer = init("'\\'escaped quotes\\''");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(0, 20)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(20, 20)), lexer.next());
+        }
+
+        {
+            var lexer = init("'\\n\\t\\r\\'\\\\'");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(0, 12)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(12, 12)), lexer.next());
+        }
+
+        {
+            var lexer = init("'unescaped\\'");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 12)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(12, 12)), lexer.next());
+        }
+
+        {
+            var lexer = init("'unterminated");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 13)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(13, 13)), lexer.next());
+        }
+
+        {
+            var lexer = init("'\\n'");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(0, 4)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(4, 4)), lexer.next());
+        }
+
+        {
+            var lexer = init("'\\x'");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 4)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(4, 4)), lexer.next());
+        }
+
+        {
+            var lexer = init("'one' 'two' 'three'");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(0, 5)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(6, 11)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(12, 19)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(19, 19)), lexer.next());
+        }
+
+        {
+            var lexer = init("'outer \\'inner\\' quote'");
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .string), Token.Location.init(0, 23)), lexer.next());
+            try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(23, 23)), lexer.next());
+        }
     }
 
     {
-        var lexer = init("''");
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(0, 2)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(2, 2)), lexer.next());
-    }
+        inline for ([_][:0]const u8{ "int", "uint", "float", "string" }) |string| {
+            const size = string.len;
+            {
+                var lexer = init(string);
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .identifier), Token.Location.init(0, size)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size, size)), lexer.next());
+            }
 
-    {
-        var lexer = init("'\\'escaped quotes\\''");
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(0, 20)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(20, 20)), lexer.next());
-    }
+            {
+                var lexer = init(" " ++ string);
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .identifier), Token.Location.init(1, size + 1)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
+            }
 
-    {
-        var lexer = init("'\\n\\t\\r\\'\\\\'");
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(0, 12)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(12, 12)), lexer.next());
-    }
+            {
+                var lexer = init("x" ++ string);
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .identifier), Token.Location.init(0, size + 1)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
+            }
 
-    {
-        var lexer = init("'unescaped\\'");
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 12)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(12, 12)), lexer.next());
-    }
+            {
+                var lexer = init("!" ++ string);
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 1)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
+            }
 
-    {
-        var lexer = init("'unterminated");
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 13)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(13, 13)), lexer.next());
-    }
+            {
+                var lexer = init(string ++ " ");
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .identifier), Token.Location.init(0, size)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
+            }
 
-    {
-        var lexer = init("'\\n'");
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(0, 4)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(4, 4)), lexer.next());
-    }
+            {
+                var lexer = init(string ++ "x");
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .identifier), Token.Location.init(0, size + 1)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
+            }
 
-    {
-        var lexer = init("'\\x'");
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 4)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(4, 4)), lexer.next());
-    }
+            {
+                var lexer = init(string ++ "!");
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 1)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 1, size + 1)), lexer.next());
+            }
 
-    {
-        var lexer = init("'one' 'two' 'three'");
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(0, 5)), lexer.next());
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(6, 11)), lexer.next());
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(12, 19)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(19, 19)), lexer.next());
-    }
+            {
+                var lexer = init(" " ++ string ++ " ");
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .identifier), Token.Location.init(1, size + 1)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 2, size + 2)), lexer.next());
+            }
 
-    {
-        var lexer = init("'outer \\'inner\\' quote'");
-        try std.testing.expectEqual(Token.init(.literal, .string, Location.init(0, 23)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(23, 23)), lexer.next());
+            {
+                var lexer = init("x" ++ string ++ "x");
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.literal, .identifier), Token.Location.init(0, size + 2)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 2, size + 2)), lexer.next());
+            }
+
+            {
+                var lexer = init("!" ++ string ++ "!");
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, size + 2)), lexer.next());
+                try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(size + 2, size + 2)), lexer.next());
+            }
+        }
     }
 }
 
 test "operators" {
     {
         var lexer = init("-> | <>");
-        try std.testing.expectEqual(Token.init(.operator, .arrow, Location.init(0, 2)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .pipe, Location.init(3, 4)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .chain, Location.init(5, 7)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(7, 7)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .arrow), Token.Location.init(0, 2)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .pipe), Token.Location.init(3, 4)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .chain), Token.Location.init(5, 7)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(7, 7)), lexer.next());
     }
 
     {
         var lexer = init("->|<>");
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 5)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(5, 5)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 5)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(5, 5)), lexer.next());
     }
 
     {
         var lexer = init("- > < > |");
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 1)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(2, 3)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(4, 5)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(6, 7)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .pipe, Location.init(8, 9)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(9, 9)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 1)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(2, 3)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(4, 5)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(6, 7)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .pipe), Token.Location.init(8, 9)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(9, 9)), lexer.next());
     }
 
     {
         var lexer = init("<- >< |>");
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 2)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(3, 5)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(6, 8)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(8, 8)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 2)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(3, 5)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(6, 8)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(8, 8)), lexer.next());
     }
 
     {
         var lexer = init("  ->     |   <>  ");
-        try std.testing.expectEqual(Token.init(.operator, .arrow, Location.init(2, 4)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .pipe, Location.init(9, 10)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .chain, Location.init(13, 15)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(17, 17)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .arrow), Token.Location.init(2, 4)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .pipe), Token.Location.init(9, 10)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .chain), Token.Location.init(13, 15)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(17, 17)), lexer.next());
     }
 
     {
         var lexer = init("-> | <>->");
-        try std.testing.expectEqual(Token.init(.operator, .arrow, Location.init(0, 2)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .pipe, Location.init(3, 4)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(5, 9)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(9, 9)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .arrow), Token.Location.init(0, 2)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .pipe), Token.Location.init(3, 4)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(5, 9)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(9, 9)), lexer.next());
     }
 
     {
         var lexer = init("|| ->-> <><>");
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(0, 2)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(3, 7)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .invalid, Location.init(8, 12)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(12, 12)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(0, 2)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(3, 7)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .invalid), Token.Location.init(8, 12)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(12, 12)), lexer.next());
     }
 
     {
         var lexer = init("| | -> -> <> <>");
-        try std.testing.expectEqual(Token.init(.operator, .pipe, Location.init(0, 1)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .pipe, Location.init(2, 3)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .arrow, Location.init(4, 6)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .arrow, Location.init(7, 9)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .chain, Location.init(10, 12)), lexer.next());
-        try std.testing.expectEqual(Token.init(.operator, .chain, Location.init(13, 15)), lexer.next());
-        try std.testing.expectEqual(Token.init(.special, .eof, Location.init(15, 15)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .pipe), Token.Location.init(0, 1)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .pipe), Token.Location.init(2, 3)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .arrow), Token.Location.init(4, 6)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .arrow), Token.Location.init(7, 9)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .chain), Token.Location.init(10, 12)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.operator, .chain), Token.Location.init(13, 15)), lexer.next());
+        try std.testing.expectEqual(Token.init(Token.Lexeme.init(.special, .end_of_frame), Token.Location.init(15, 15)), lexer.next());
     }
 }

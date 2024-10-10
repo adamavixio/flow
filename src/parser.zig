@@ -1,130 +1,17 @@
 const std = @import("std");
 
-const Self = @This();
+const Parser = @This();
+const Ast = @import("ast.zig");
 const Lexer = @import("lexer.zig");
-const Token = Lexer.Token;
-const Primitive = @import("type.zig").Primitive;
-const Logger = @import("log/root.zig").Logger;
+const Token = @import("lexer.zig");
 
 lexer: Lexer,
 token: Token,
-logger: Logger,
 allocator: std.mem.Allocator,
 
-pub const Ast = union(enum) {
-    module: Module,
-    pipeline: Pipeline,
-    stage: Stage,
-
-    pub const Tag = std.meta.FieldEnum(Ast);
-
-    pub fn Type(comptime tag: Tag) type {
-        return std.meta.FieldType(Ast, tag);
-    }
-
-    pub const Module = struct {
-        pipelines: std.ArrayList(*Pipeline),
-
-        pub fn init(allocator: std.mem.Allocator) !*Module {
-            const module = try allocator.create(Module);
-            module.* = .{ .pipelines = std.ArrayList(*Pipeline).init(allocator) };
-            return module;
-        }
-
-        pub fn deinit(module: *Module, allocator: std.mem.Allocator) void {
-            for (module.pipelines.items) |pipeline| {
-                pipeline.deinit(allocator);
-            }
-            module.pipelines.deinit();
-            allocator.destroy(module);
-        }
-
-        pub fn appendPipeline(module: *Module, pipeline: *Pipeline) Error!void {
-            try module.pipelines.append(pipeline);
-        }
-    };
-
-    pub const Pipeline = struct {
-        stages: std.ArrayList(*Stage),
-
-        pub fn init(allocator: std.mem.Allocator) !*Pipeline {
-            const pipeline = try allocator.create(Pipeline);
-            pipeline.* = .{ .stages = std.ArrayList(*Stage).init(allocator) };
-            return pipeline;
-        }
-
-        pub fn deinit(pipeline: *Pipeline, allocator: std.mem.Allocator) void {
-            for (pipeline.stages.items) |stage| {
-                stage.deinit(allocator);
-            }
-            pipeline.stages.deinit();
-            allocator.destroy(pipeline);
-        }
-
-        pub fn appendStage(pipeline: *Pipeline, stage: *Stage) Error!void {
-            try pipeline.stages.append(stage);
-        }
-    };
-
-    pub const Stage = union(Primitive.Tag) {
-        int: IntStage,
-        float: FloatStage,
-        string: StringStage,
-
-        pub const IntStage = struct {
-            literals: std.ArrayList(Token),
-            operators: std.ArrayList(Primitive.Operator(.int)),
-        };
-
-        pub const FloatStage = struct {
-            literals: std.ArrayList(Token),
-            operators: std.ArrayList(Primitive.Operator(.float)),
-        };
-
-        pub const StringStage = struct {
-            literals: std.ArrayList(Token),
-            operators: std.ArrayList(Primitive.Operator(.string)),
-        };
-
-        pub fn init(tag: Primitive.Tag, allocator: std.mem.Allocator) Error!*Stage {
-            const stage = try allocator.create(Stage);
-            stage.* = switch (tag) {
-                inline else => |t| @unionInit(Stage, @tagName(t), .{
-                    .literals = std.ArrayList(Token).init(allocator),
-                    .operators = std.ArrayList(Primitive.Operator(t)).init(allocator),
-                }),
-            };
-            return stage;
-        }
-
-        pub fn deinit(stage: *Stage, allocator: std.mem.Allocator) void {
-            switch (stage.*) {
-                inline else => |s| {
-                    s.literals.deinit();
-                    s.operators.deinit();
-                },
-            }
-            allocator.destroy(stage);
-        }
-
-        pub fn appendLiteral(stage: *Stage, literal: Token) !void {
-            switch (stage.*) {
-                inline else => |*s| try s.literals.append(literal),
-            }
-        }
-
-        pub fn appendOperator(stage: *Stage, comptime tag: Primitive.Tag, operator: Primitive.Operator(tag)) !void {
-            switch (stage.*) {
-                inline else => |*s, t| if (tag == t) {
-                    try s.operators.append(operator);
-                },
-            }
-        }
-    };
-};
-
 pub const Error = error{
-    Expected_Keyword_Or_Special,
+    InvalidToken,
+    InvalidSpecial,
     Expected_Symbol,
     Expected_Symbol_Colon,
     Expected_Operator,
@@ -138,76 +25,55 @@ pub const Error = error{
     Expected_Literal_Identifier_Int,
     Expected_Literal_Identifier_Float,
     Expected_Literal_Identifier_String,
-    Expected_Special_EOF,
-} || std.mem.Allocator.Error;
+    ExpectedSpecialEOF,
+};
 
-pub fn init(lexer: Lexer, allocator: std.mem.Allocator) Self {
+pub fn init(lexer: Lexer, allocator: std.mem.Allocator) Parser {
     return .{
         .lexer = lexer,
-        .token = undefined,
-        .logger = Logger.init(.info),
+        .token = lexer.next(),
         .allocator = allocator,
     };
 }
 
-pub fn next(self: *Self) void {
+pub fn next(self: *Parser) void {
     self.token = self.lexer.next();
 }
 
-pub fn parse(self: *Self) Error!*Ast.Module {
-    var module = try Ast.Module.init(self.allocator);
-    errdefer module.deinit(self.allocator);
+pub fn parse(self: *Parser) !*Ast {
+    var ast = try Ast.init(self.allocator);
+    errdefer ast.deinit(self.allocator);
 
-    self.next();
     while (true) {
-        const pipeline = switch (self.token) {
-            .keyword => switch (self.token.keyword) {
-                .int => try self.parsePipeline(.int),
-                .float => try self.parsePipeline(.float),
-                .string => try self.parsePipeline(.string),
+        switch (self.token) {
+            .type => {
+                const pipeline = try self.parsePipeline();
+                try ast.appendPipeline(pipeline);
             },
             .special => switch (self.token.special) {
-                .eof => return module,
-                else => return Error.Expected_Special_EOF,
+                .eof => break,
+                else => return Error.InvalidSpecial,
             },
-            else => return Error.Expected_Keyword_Or_Special,
-        };
-        try module.appendPipeline(pipeline);
+            else => return Error.InvalidToken,
+        }
     }
+
+    return ast;
 }
 
-pub fn parsePipeline(self: *Self, tag: Primitive.Tag) Error!*Ast.Pipeline {
+pub fn parsePipeline(self: *Parser) Error!*Ast.Pipeline {
     var pipeline = try Ast.Pipeline.init(self.allocator);
     errdefer pipeline.deinit(self.allocator);
 
-    self.next();
-    switch (self.token) {
-        .symbol => switch (self.token.symbol) {
-            .colon => {},
-        },
-        else => return Error.Expected_Symbol,
+    while (self.parseStage()) |stage| {
+        try pipeline.appendStage(stage);
     }
 
-    while (true) {
-        const stage = try self.parseStage(tag);
-        try pipeline.appendStage(stage);
-        switch (self.token) {
-            .keyword => return pipeline,
-            .operator => switch (self.token.operator) {
-                .arrow => {},
-                else => return Error.Expected_Operator_Arrow,
-            },
-            .special => switch (self.token.special) {
-                .eof => return pipeline,
-                else => return Error.Expected_Special_EOF,
-            },
-            else => return Error.Expected_Operator,
-        }
-    }
+    return pipeline;
 }
 
-pub fn parseStage(self: *Self, tag: Primitive.Tag) Error!*Ast.Stage {
-    var stage = try Ast.Stage.init(tag, self.allocator);
+pub fn parseStage(self: *Parser) !?*Ast.Stage {
+    var stage = try Ast.Stage.init(self.allocator, tag);
     errdefer stage.deinit(self.allocator);
 
     while (true) {
