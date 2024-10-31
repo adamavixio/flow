@@ -32,6 +32,7 @@ pub const Tag = enum {
     f64,
     f128,
     float,
+    bytes,
     string,
 };
 
@@ -53,6 +54,7 @@ pub const Base = union(Tag) {
     f64: f64,
     f128: f128,
     float: f64,
+    bytes: []u8,
     string: []const u8,
 };
 
@@ -149,96 +151,138 @@ pub fn Type(comptime tag: Tag) type {
 }
 
 pub fn Implement(comptime Pointer: type, comptime Value: type) type {
-    return switch (@typeInfo(Value)) {
-        .Int => struct {
+    switch (@typeInfo(Value)) {
+        .Int => return struct {
             const Self = @This();
-            pub fn add(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value += value;
-            }
-            pub fn sub(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value -= value;
-            }
-            pub fn mul(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value *= value;
-            }
-            pub fn div(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value = @divTrunc(pointer.value, value);
-            }
-            pub fn string(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                const transform = try std.fmt.allocPrint(allocator, "{d}", .{pointer.value});
-                defer allocator.free(transform);
-                return try Type(.string).init(allocator, transform);
-            }
-            pub fn print(self: *Self) !void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                std.debug.print(pointer.value);
-            }
-        },
-        .Float => struct {
-            const Self = @This();
-            pub fn add(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value += value;
-            }
-            pub fn sub(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value -= value;
-            }
-            pub fn mul(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value *= value;
-            }
-            pub fn div(self: *Self, value: Value) void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                pointer.value = @divTrunc(pointer.value, value);
-            }
-            pub fn string(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                const transform = try std.fmt.allocPrint(allocator, "{d}", .{pointer.value});
-                defer allocator.free(transform);
-                return try Type(.string).init(allocator, transform);
-            }
-            pub fn print(self: *Self) !void {
-                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                std.debug.print(pointer.value);
-            }
-        },
-        .Pointer => |info| switch (info.child) {
-            u8 => struct {
-                const Self = @This();
-                pub fn upper(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
-                    const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                    var transform = try allocator.alloc(u8, pointer.value.len);
-                    defer allocator.free(transform);
-                    for (pointer.value, 0..) |c, i| {
-                        transform[i] = std.ascii.toUpper(c);
-                    }
-                    return Type(.string).init(allocator, transform);
-                }
 
-                pub fn lower(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
-                    const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                    var transform = try allocator.alloc(u8, pointer.value.len);
-                    defer allocator.free(transform);
-                    for (pointer.value, 0..) |c, i| {
-                        transform[i] = std.ascii.toLower(c);
-                    }
-                    return Type(.string).init(allocator, transform);
-                }
-                pub fn print(self: *Self) !void {
-                    const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
-                    std.debug.print(pointer.value);
-                }
+            pub fn add(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value += value;
+            }
+
+            pub fn sub(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value -= value;
+            }
+
+            pub fn mul(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value *= value;
+            }
+
+            pub fn div(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value = @divTrunc(pointer.value, value);
+            }
+
+            pub fn string(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                const transform = try std.fmt.allocPrint(allocator, "{d}", .{pointer.value});
+                defer allocator.free(transform);
+                return try Type(.string).init(allocator, transform);
+            }
+
+            pub fn print(self: *Self) !void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                std.debug.print(pointer.value);
+            }
+        },
+        .Float => return struct {
+            const Self = @This();
+
+            pub fn add(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value += value;
+            }
+
+            pub fn sub(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value -= value;
+            }
+
+            pub fn mul(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value *= value;
+            }
+
+            pub fn div(self: *Self, value: Value) void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                pointer.value = @divTrunc(pointer.value, value);
+            }
+
+            pub fn string(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                const transform = try std.fmt.allocPrint(allocator, "{d}", .{pointer.value});
+                defer allocator.free(transform);
+                return try Type(.string).init(allocator, transform);
+            }
+
+            pub fn print(self: *Self) !void {
+                const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                std.debug.print(pointer.value);
+            }
+        },
+        .Pointer => |info| switch (info.size) {
+            .Slice => switch (info.child) {
+                u8 => if (info.is_const) {
+                    return struct {
+                        const Self = @This();
+
+                        pub fn upper(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
+                            const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                            var transform = try allocator.alloc(u8, pointer.value.len);
+                            defer allocator.free(transform);
+                            for (pointer.value, 0..) |c, i| {
+                                transform[i] = std.ascii.toUpper(c);
+                            }
+                            return Type(.string).init(allocator, transform);
+                        }
+
+                        pub fn lower(self: *Self, allocator: std.mem.Allocator) !*Type(.string) {
+                            const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                            var transform = try allocator.alloc(u8, pointer.value.len);
+                            defer allocator.free(transform);
+                            for (pointer.value, 0..) |c, i| {
+                                transform[i] = std.ascii.toLower(c);
+                            }
+                            return Type(.string).init(allocator, transform);
+                        }
+
+                        pub fn print(self: *Self) !void {
+                            const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                            std.debug.print(pointer.value);
+                        }
+                    };
+                } else {
+                    return struct {
+                        const Self = @This();
+
+                        pub fn upper(self: *Self) void {
+                            const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                            for (pointer.value) |*c| {
+                                c.* = std.ascii.toUpper(c.*);
+                            }
+                        }
+
+                        pub fn lower(self: *Self) void {
+                            const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                            for (pointer.value) |*c| {
+                                c.* = std.ascii.toLower(c.*);
+                            }
+                        }
+
+                        pub fn print(self: *Self) !void {
+                            const pointer: *Pointer = @alignCast(@fieldParentPtr("traits", self));
+                            std.debug.print(pointer.value);
+                        }
+                    };
+                },
+                else => @compileError("unsupported slice type: " ++ @typeName(info.child)),
             },
-            else => @compileError("unsupported pointer type: " ++ @typeInfo(info.child)),
+            else => @compileError("unsupported pointer size: " ++ @typeName(info.size)),
         },
         else => @compileError("unsupported value type: " ++ @typeInfo(Value)),
-    };
+    }
 }
 
 pub fn TypeFrom(string: []const u8) type {
@@ -349,26 +393,43 @@ test "primitive float" {
     }
 }
 
+test "primitive bytes" {
+    const allocator = std.testing.allocator;
+
+    var slice = "test".*;
+    var bytes = try TypeFrom("bytes").init(allocator, &slice);
+    defer bytes.deinit(allocator);
+    try std.testing.expectEqualStrings("test", bytes.value);
+
+    try bytes.assertMutation("upper");
+    bytes.traits.upper();
+    try std.testing.expectEqualStrings("TEST", bytes.value);
+
+    try bytes.assertMutation("lower");
+    bytes.traits.lower();
+    try std.testing.expectEqualStrings("test", bytes.value);
+
+    try bytes.assertTermination("print");
+}
+
 test "primitive string" {
     const allocator = std.testing.allocator;
 
-    inline for ([_][]const u8{"string"}) |literal| {
-        var string = try TypeFrom(literal).init(allocator, "test");
-        defer string.deinit(allocator);
-        try std.testing.expectEqualStrings("test", string.value);
+    var string = try TypeFrom("string").init(allocator, "test");
+    defer string.deinit(allocator);
+    try std.testing.expectEqualStrings("test", string.value);
 
-        try string.assertTransformation("upper");
-        const upper = try string.traits.upper(allocator);
-        defer upper.deinit(allocator);
-        try std.testing.expectEqualStrings("TEST", upper.value);
+    try string.assertTransformation("upper");
+    const upper = try string.traits.upper(allocator);
+    defer upper.deinit(allocator);
+    try std.testing.expectEqualStrings("TEST", upper.value);
 
-        try string.assertTransformation("lower");
-        const lower = try string.traits.lower(allocator);
-        defer lower.deinit(allocator);
-        try std.testing.expectEqualStrings("test", lower.value);
+    try string.assertTransformation("lower");
+    const lower = try string.traits.lower(allocator);
+    defer lower.deinit(allocator);
+    try std.testing.expectEqualStrings("test", lower.value);
 
-        try string.assertTermination("print");
-    }
+    try string.assertTermination("print");
 }
 
 // test "primitive uint" {
