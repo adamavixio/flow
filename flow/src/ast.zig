@@ -1,5 +1,5 @@
 const std = @import("std");
-const primitive = @import("type/primitive.zig");
+const core = @import("core");
 
 const Ast = @This();
 const Token = @import("token.zig");
@@ -11,9 +11,7 @@ pub const Pipeline = struct {
 
     pub fn init(allocator: std.mem.Allocator) !*Pipeline {
         const pipeline = try allocator.create(Pipeline);
-        pipeline.* = .{
-            .stages = std.ArrayList(*Stage).init(allocator),
-        };
+        pipeline.* = .{ .stages = std.ArrayList(*Stage).init(allocator) };
         return pipeline;
     }
 
@@ -31,34 +29,16 @@ pub const Pipeline = struct {
 };
 
 pub const Stage = struct {
-    input: primitive.Type,
-    output: primitive.Type,
-    literals: std.ArrayList(Token),
-    mutations: std.ArrayList(Token),
-    transforms: std.ArrayList(Token),
-    terminals: std.ArrayList(Token),
+    Type: type,
+    steps: std.ArrayList([]const u8)
 
-    pub fn init(tag: primitive.Type, allocator: std.mem.Allocator) !*Stage {
+    pub fn init(allocator: std.mem.Allocator, string: []const u8) !*Stage {
         const stage = try allocator.create(Stage);
-        stage.* = .{
-            .tag = tag,
-            .literals = std.ArrayList(Token).init(allocator),
-            .mutations = std.ArrayList(Token).init(allocator),
-            .transforms = std.ArrayList(Token).init(allocator),
-            .terminals = std.ArrayList(Token).init(allocator),
-        };
+        stage.* = .{ .Type = core.Primitive.TypeFrom(string), steps: std.ArrayList() };
         return stage;
     }
 
     pub fn deinit(stage: *Stage, allocator: std.mem.Allocator) void {
-        switch (stage.*) {
-            inline else => |s| {
-                s.literals.deinit();
-                s.mutations.deinit();
-                s.transforms.deinit();
-                s.terminals.deinit();
-            },
-        }
         allocator.destroy(stage);
     }
 
@@ -95,11 +75,24 @@ pub const Stage = struct {
     }
 };
 
+pub const Step = union(enum) {
+    pub const Tag = enum{
+        mutation,
+        transformation,
+        termination,
+        invalid,
+    }
+
+    tag: Tag,
+    trait: []const u8,
+
+    pub fn init(allocator: std.mem.Allocator, Type: type, string: []const u8) !*Step {
+    }
+}
+
 pub fn init(allocator: std.mem.Allocator) !*Ast {
     const ast = try allocator.create(Ast);
-    ast.* = .{
-        .pipelines = std.ArrayList(*Pipeline).init(allocator),
-    };
+    ast.* = .{ .pipelines = std.ArrayList(*Pipeline).init(allocator) };
     return ast;
 }
 

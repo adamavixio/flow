@@ -1,8 +1,9 @@
 .{
-    .name = "workspace",
+    .name = "log",
     .version = "0.0.0",
     .dependencies = .{
-        .log = .{ .path = "./log" },
+        .log = .{ .path = "../log" },
+        .core = .{ .path = "../core" },
     },
     .paths = .{
         "build.zig",

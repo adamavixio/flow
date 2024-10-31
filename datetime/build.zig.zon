@@ -1,9 +1,7 @@
 .{
-    .name = "workspace",
+    .name = "log",
     .version = "0.0.0",
-    .dependencies = .{
-        .log = .{ .path = "./log" },
-    },
+    .dependencies = .{},
     .paths = .{
         "build.zig",
         "build.zig.zon",

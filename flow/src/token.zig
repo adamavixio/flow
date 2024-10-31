@@ -1,5 +1,5 @@
 const std = @import("std");
-const primitive = @import("type/primitive.zig");
+const core = @import("core");
 
 const Token = @This();
 
@@ -40,7 +40,7 @@ pub const Lexeme = union(enum) {
     }
 
     pub fn initString(string: []const u8) Lexeme {
-        if (primitive.Type.fromString(string)) |lexeme| {
+        if (core.Type.LayoutFromString(string)) |lexeme| {
             return .{ .type = lexeme };
         }
         return .{ .literal = .identifier };
