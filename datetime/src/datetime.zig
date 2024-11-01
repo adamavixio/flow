@@ -11,14 +11,7 @@ pub const DateTime = struct {
     pub fn write(self: DateTime, writer: std.io.AnyWriter) !void {
         try writer.print(
             "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}",
-            .{
-                self.year,
-                self.month,
-                self.day,
-                self.hour,
-                self.minute,
-                self.second,
-            },
+            .{ self.year, self.month, self.day, self.hour, self.minute, self.second },
         );
     }
 };
@@ -44,9 +37,20 @@ pub fn now() DateTime {
 }
 
 test "datetime conversion" {
-    var buffer: [32]u8 = undefined;
+    const allocator = std.testing.allocator;
 
-    const datetime = now();
-    const formatted = try datetime.format(&buffer);
-    std.debug.print("\nFormatted time: {s}\n", .{formatted});
+    var buffer = std.ArrayList(u8).init(allocator);
+    defer buffer.deinit();
+
+    const datetime = DateTime{
+        .year = 2000,
+        .month = 12,
+        .day = 25,
+        .hour = 15,
+        .minute = 0,
+        .second = 30,
+    };
+
+    try datetime.write(buffer.writer().any());
+    try std.testing.expectEqualStrings("2000-12-25 15:00:30", buffer.items);
 }

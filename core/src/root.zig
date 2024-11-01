@@ -1,9 +1,9 @@
 const std = @import("std");
-const @"type" = @import("type.zig");
 
-const Type = @"type".Type;
-const Primitive = @"type".map;
+pub const Core = @import("core.zig");
+pub const Trait = @import("trait.zig");
 
 test {
-    std.testing.refAllDecls(@"type");
+    std.testing.refAllDecls(Core);
+    std.testing.refAllDecls(Trait);
 }
