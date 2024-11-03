@@ -1,11 +1,5 @@
 const std = @import("std");
-const Core = @import("core.zig");
-
-pub const Trait = @This();
-
-pub const Error = error{
-    MissingMethod,
-};
+const core = @import("core.zig");
 
 pub fn Mutatable(comptime Pointer: type, comptime Value: type) type {
     switch (@typeInfo(Value)) {
@@ -81,20 +75,20 @@ pub fn Transformable(comptime Pointer: type, comptime Value: type) type {
     switch (@typeInfo(Value)) {
         .Int => return struct {
             const Self = @This();
-            pub fn string(self: *Self, allocator: std.mem.Allocator) !*Core.FlowType(.string) {
+            pub fn string(self: *Self, allocator: std.mem.Allocator) !*core.FlowType.FromTag(.string) {
                 const pointer: *Pointer = @alignCast(@fieldParentPtr("transform", self));
                 const transform = try std.fmt.allocPrint(allocator, "{d}", .{pointer.value});
                 defer allocator.free(transform);
-                return try Core.FlowType(.string).init(allocator, transform);
+                return try core.FlowType.FromTag(.string).init(allocator, transform);
             }
         },
         .Float => return struct {
             const Self = @This();
-            pub fn string(self: *Self, allocator: std.mem.Allocator) !*Core.FlowType(.string) {
+            pub fn string(self: *Self, allocator: std.mem.Allocator) !*core.FlowType.FromTag(.string) {
                 const pointer: *Pointer = @alignCast(@fieldParentPtr("transform", self));
                 const transform = try std.fmt.allocPrint(allocator, "{d}", .{pointer.value});
                 defer allocator.free(transform);
-                return try Core.FlowType(.string).init(allocator, transform);
+                return try core.FlowType.FromTag(.string).init(allocator, transform);
             }
         },
         .Pointer => |info| switch (info.size) {
@@ -102,23 +96,23 @@ pub fn Transformable(comptime Pointer: type, comptime Value: type) type {
                 u8 => switch (info.is_const) {
                     true => return struct {
                         const Self = @This();
-                        pub fn upper(self: *Self, allocator: std.mem.Allocator) !*Core.FlowType(.string) {
+                        pub fn upper(self: *Self, allocator: std.mem.Allocator) !*core.FlowType.FromTag(.string) {
                             const pointer: *Pointer = @alignCast(@fieldParentPtr("transform", self));
                             var transform = try allocator.alloc(u8, pointer.value.len);
                             defer allocator.free(transform);
                             for (pointer.value, 0..) |c, i| {
                                 transform[i] = std.ascii.toUpper(c);
                             }
-                            return Core.FlowType(.string).init(allocator, transform);
+                            return core.FlowType.FromTag(.string).init(allocator, transform);
                         }
-                        pub fn lower(self: *Self, allocator: std.mem.Allocator) !*Core.FlowType(.string) {
+                        pub fn lower(self: *Self, allocator: std.mem.Allocator) !*core.FlowType.FromTag(.string) {
                             const pointer: *Pointer = @alignCast(@fieldParentPtr("transform", self));
                             var transform = try allocator.alloc(u8, pointer.value.len);
                             defer allocator.free(transform);
                             for (pointer.value, 0..) |c, i| {
                                 transform[i] = std.ascii.toLower(c);
                             }
-                            return Core.FlowType(.string).init(allocator, transform);
+                            return core.FlowType.FromTag(.string).init(allocator, transform);
                         }
                     },
                     false => return struct {},

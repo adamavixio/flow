@@ -1,7 +1,6 @@
 const std = @import("std");
 const trait = @import("trait.zig");
-
-pub const Core = @This();
+const status = @import("status.zig");
 
 pub const FlowTag = enum {
     i8,
@@ -24,8 +23,8 @@ pub const FlowTag = enum {
     bytes,
     string,
 
-    pub fn BaseType(float_flow_tag: FlowTag) type {
-        return switch (float_flow_tag) {
+    pub fn ToBaseType(flow_tag: FlowTag) type {
+        return switch (flow_tag) {
             .i8 => i8,
             .i16 => i16,
             .i32 => i32,
@@ -48,6 +47,10 @@ pub const FlowTag = enum {
         };
     }
 
+    pub fn ToFlowType(flow_tag: FlowTag) type {
+        return FlowType(flow_tag);
+    }
+
     pub const map = blk: {
         var entries: [@typeInfo(FlowTag).Enum.fields.len]struct { []const u8, FlowTag } = undefined;
         for (@typeInfo(FlowTag).Enum.fields, 0..) |field, i| {
@@ -56,43 +59,47 @@ pub const FlowTag = enum {
         break :blk std.StaticStringMap(FlowTag).initComptime(entries);
     };
 
-    pub fn fromString(comptime tag_name: []const u8) ?FlowTag {
-        return map.get(tag_name);
+    pub fn hasString(string: []const u8) bool {
+        return map.has(string);
     }
 
-    pub fn fromFlowType(T: type) ?FlowTag {
+    pub fn fromString(string: []const u8) status.Error!FlowTag {
+        return map.get(string) orelse status.Error.TagNameNotFound;
+    }
+
+    pub fn fromFlowType(T: type) status.Error!FlowTag {
         inline for (@typeInfo(FlowTag).Enum.fields) |field| {
             const flow_tag = @field(FlowTag, field.name);
-            if (FlowType(flow_tag) == T) return flow_tag;
+            if (FlowType.FromTag(flow_tag) == T) return flow_tag;
         }
-        return null;
+        return status.Error.TagTypeNotFound;
     }
 
-    pub fn fromTransformTrait(flow_tag: FlowTag, comptime trait_name: []const u8) ?FlowTag {
+    pub fn fromTransformTrait(flow_tag: FlowTag, comptime trait_name: []const u8) status.Error!FlowTag {
         switch (flow_tag) {
             inline else => |value| {
-                const Transform = FlowType(value).Transform;
+                const Transform = FlowType.FromTag(value).Transform;
 
                 if (!@hasDecl(Transform, trait_name)) {
-                    return null;
+                    return status.Error.TransformTraitNotFound;
                 }
 
                 const fn_info = switch (@typeInfo(@TypeOf(@field(Transform, trait_name)))) {
                     .Fn => |info| info,
-                    else => return null,
+                    else => return status.Error.TransformTraitNotFunction,
                 };
 
                 const error_info = switch (@typeInfo(fn_info.return_type.?)) {
                     .ErrorUnion => |info| info,
-                    else => return null,
+                    else => return status.Error.TransformResultNotError,
                 };
 
                 const pointer_info = switch (@typeInfo(error_info.payload)) {
                     .Pointer => |info| info,
-                    else => return null,
+                    else => return status.Error.TransformResultNotPointer,
                 };
 
-                return fromFlowType(pointer_info.child);
+                return try fromFlowType(pointer_info.child);
             },
         }
     }
@@ -100,7 +107,7 @@ pub const FlowTag = enum {
     pub fn hasMutation(flow_tag: FlowTag, comptime trait_name: []const u8) bool {
         switch (flow_tag) {
             inline else => |value| {
-                return @hasDecl(FlowType(value).Mutation, trait_name);
+                return @hasDecl(FlowType.FromTag(value).Mutation, trait_name);
             },
         }
     }
@@ -108,7 +115,7 @@ pub const FlowTag = enum {
     pub fn hasTransform(flow_tag: FlowTag, comptime trait_name: []const u8) bool {
         switch (flow_tag) {
             inline else => |value| {
-                return @hasDecl(FlowType(value).Transform, trait_name);
+                return @hasDecl(FlowType.FromTag(value).Transform, trait_name);
             },
         }
     }
@@ -116,63 +123,63 @@ pub const FlowTag = enum {
     pub fn hasTerminal(flow_tag: FlowTag, comptime trait_name: []const u8) bool {
         switch (flow_tag) {
             inline else => |value| {
-                return @hasDecl(FlowType(value).Terminal, trait_name);
+                return @hasDecl(FlowType.FromTag(value).Terminal, trait_name);
             },
         }
     }
 };
 
-pub fn FlowType(comptime flow_tag: FlowTag) type {
-    return struct {
-        const Self = @This();
-
-        pub const Base = flow_tag.BaseType();
-        pub const Mutation = trait.Mutatable(Self, Base);
-        pub const Transform = trait.Transformable(Self, Base);
-        pub const Terminal = trait.Terminable(Self, Base);
-
-        value: Base,
-        mutation: Mutation = .{},
-        transform: Transform = .{},
-        terminal: Terminal = .{},
-
-        pub fn init(allocator: std.mem.Allocator, value: Base) !*Self {
-            const self = try allocator.create(Self);
-            switch (@typeInfo(Base)) {
-                .Pointer => |ptr_info| switch (ptr_info.child) {
-                    u8 => self.*.value = try allocator.dupe(u8, value),
-                    else => self.*.value = value,
-                },
-                else => self.*.value = value,
-            }
-            return self;
-        }
-
-        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-            switch (@typeInfo(Base)) {
-                .Pointer => |ptr_info| switch (ptr_info.child) {
-                    u8 => allocator.free(self.value),
-                    else => {},
-                },
-                else => {},
-            }
-            allocator.destroy(self);
-        }
-    };
-}
-
-pub fn FlowTypeFromString(type_name: []const u8) ?type {
-    if (FlowTag.fromString(type_name)) |flow_tag| {
-        return FlowType(flow_tag);
+pub const FlowType = struct {
+    pub fn FromString(comptime flow_tag_name: []const u8) type {
+        const flow_Tag = try FlowTag.fromString(flow_tag_name);
+        return FromTag(flow_Tag);
     }
-    return null;
-}
 
-test "primitive int" {
+    pub fn FromTag(comptime flow_tag: FlowTag) type {
+        return struct {
+            const Self = @This();
+
+            pub const Base = flow_tag.ToBaseType();
+            pub const Mutation = trait.Mutatable(Self, Base);
+            pub const Transform = trait.Transformable(Self, Base);
+            pub const Terminal = trait.Terminable(Self, Base);
+
+            value: Base,
+            mutation: Mutation = .{},
+            transform: Transform = .{},
+            terminal: Terminal = .{},
+
+            pub fn init(allocator: std.mem.Allocator, value: Base) !*Self {
+                const self = try allocator.create(Self);
+                switch (@typeInfo(Base)) {
+                    .Pointer => |ptr_info| switch (ptr_info.child) {
+                        u8 => self.*.value = try allocator.dupe(u8, value),
+                        else => self.*.value = value,
+                    },
+                    else => self.*.value = value,
+                }
+                return self;
+            }
+
+            pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+                switch (@typeInfo(Base)) {
+                    .Pointer => |ptr_info| switch (ptr_info.child) {
+                        u8 => allocator.free(self.value),
+                        else => {},
+                    },
+                    else => {},
+                }
+                allocator.destroy(self);
+            }
+        };
+    }
+};
+
+test "signed integer" {
     const allocator = std.testing.allocator;
 
     inline for ([_][]const u8{ "i8", "i16", "i32", "i64", "i128", "int" }) |string| {
-        const flow_tag = FlowTag.fromString(string).?;
+        const flow_tag = try FlowTag.fromString(string);
 
         try std.testing.expect(flow_tag.hasMutation("add"));
         try std.testing.expect(flow_tag.hasMutation("sub"));
@@ -180,120 +187,131 @@ test "primitive int" {
         try std.testing.expect(flow_tag.hasMutation("div"));
         try std.testing.expect(flow_tag.hasTransform("string"));
         try std.testing.expect(flow_tag.hasTerminal("print"));
-
         try std.testing.expectEqual(.string, flow_tag.fromTransformTrait("string"));
-    }
 
-    inline for ([_][]const u8{ "i8", "i16", "i32", "i64", "i128", "int" }) |string| {
-        const Int = FlowTypeFromString(string).?;
+        var flow_value = try FlowType.FromString(string).init(allocator, 0);
+        defer flow_value.deinit(allocator);
 
-        var int = try Int.init(allocator, 0);
-        defer int.deinit(allocator);
-        try std.testing.expectEqual(0, int.value);
+        try std.testing.expectEqual(0, flow_value.value);
+        flow_value.mutation.add(20);
+        try std.testing.expectEqual(20, flow_value.value);
+        flow_value.mutation.sub(10);
+        try std.testing.expectEqual(10, flow_value.value);
+        flow_value.mutation.mul(5);
+        try std.testing.expectEqual(50, flow_value.value);
+        flow_value.mutation.div(2);
+        try std.testing.expectEqual(25, flow_value.value);
 
-        int.mutation.add(20);
-        try std.testing.expectEqual(20, int.value);
+        const transform = try flow_value.transform.string(allocator);
+        defer transform.deinit(allocator);
 
-        int.mutation.sub(10);
-        try std.testing.expectEqual(10, int.value);
-
-        int.mutation.mul(5);
-        try std.testing.expectEqual(50, int.value);
-
-        int.mutation.div(2);
-        try std.testing.expectEqual(25, int.value);
-
-        const string_transform = try int.transform.string(allocator);
-        defer string_transform.deinit(allocator);
-        try std.testing.expectEqualStrings("25", string_transform.value);
+        try std.testing.expectEqualStrings("25", transform.value);
     }
 }
 
-test "primitive uint" {
+test "unsigned integer" {
     const allocator = std.testing.allocator;
 
     inline for ([_][]const u8{ "u8", "u16", "u32", "u64", "u128", "uint" }) |string| {
-        const Uint = FlowTypeFromString(string).?;
+        const flow_tag = try FlowTag.fromString(string);
 
-        var uint = try Uint.init(allocator, 0);
-        defer uint.deinit(allocator);
-        try std.testing.expectEqual(0, uint.value);
+        try std.testing.expect(flow_tag.hasMutation("add"));
+        try std.testing.expect(flow_tag.hasMutation("sub"));
+        try std.testing.expect(flow_tag.hasMutation("mul"));
+        try std.testing.expect(flow_tag.hasMutation("div"));
+        try std.testing.expect(flow_tag.hasTransform("string"));
+        try std.testing.expect(flow_tag.hasTerminal("print"));
+        try std.testing.expectEqual(.string, flow_tag.fromTransformTrait("string"));
 
-        uint.mutation.add(20);
-        try std.testing.expectEqual(20, uint.value);
+        var flow_value = try FlowType.FromString(string).init(allocator, 0);
+        defer flow_value.deinit(allocator);
 
-        uint.mutation.sub(10);
-        try std.testing.expectEqual(10, uint.value);
+        try std.testing.expectEqual(0, flow_value.value);
+        flow_value.mutation.add(20);
+        try std.testing.expectEqual(20, flow_value.value);
+        flow_value.mutation.sub(10);
+        try std.testing.expectEqual(10, flow_value.value);
+        flow_value.mutation.mul(5);
+        try std.testing.expectEqual(50, flow_value.value);
+        flow_value.mutation.div(2);
+        try std.testing.expectEqual(25, flow_value.value);
 
-        uint.mutation.mul(5);
-        try std.testing.expectEqual(50, uint.value);
+        const transform = try flow_value.transform.string(allocator);
+        defer transform.deinit(allocator);
 
-        uint.mutation.div(2);
-        try std.testing.expectEqual(25, uint.value);
-
-        const string_transform = try uint.transform.string(allocator);
-        defer string_transform.deinit(allocator);
-        try std.testing.expectEqualStrings("25", string_transform.value);
+        try std.testing.expectEqualStrings("25", transform.value);
     }
 }
 
-test "primitive float" {
+test "floating point" {
     const allocator = std.testing.allocator;
 
     inline for ([_][]const u8{ "f16", "f32", "f64", "f128", "float" }) |string| {
-        const Float = FlowTypeFromString(string).?;
+        const flow_tag = try FlowTag.fromString(string);
 
-        var float = try Float.init(allocator, 0);
-        defer float.deinit(allocator);
-        try std.testing.expectEqual(0, float.value);
+        try std.testing.expect(flow_tag.hasMutation("add"));
+        try std.testing.expect(flow_tag.hasMutation("sub"));
+        try std.testing.expect(flow_tag.hasMutation("mul"));
+        try std.testing.expect(flow_tag.hasMutation("div"));
+        try std.testing.expect(flow_tag.hasTransform("string"));
+        try std.testing.expect(flow_tag.hasTerminal("print"));
+        try std.testing.expectEqual(.string, flow_tag.fromTransformTrait("string"));
 
-        float.mutation.add(20);
-        try std.testing.expectEqual(20, float.value);
+        var flow_value = try FlowType.FromString(string).init(allocator, 0);
+        defer flow_value.deinit(allocator);
 
-        float.mutation.sub(10);
-        try std.testing.expectEqual(10, float.value);
+        try std.testing.expectEqual(0, flow_value.value);
+        flow_value.mutation.add(20);
+        try std.testing.expectEqual(20, flow_value.value);
+        flow_value.mutation.sub(10);
+        try std.testing.expectEqual(10, flow_value.value);
+        flow_value.mutation.mul(5);
+        try std.testing.expectEqual(50, flow_value.value);
+        flow_value.mutation.div(2);
+        try std.testing.expectEqual(25, flow_value.value);
 
-        float.mutation.mul(5);
-        try std.testing.expectEqual(50, float.value);
+        const transform = try flow_value.transform.string(allocator);
+        defer transform.deinit(allocator);
 
-        float.mutation.div(2);
-        try std.testing.expectEqual(25, float.value);
-
-        const string_transform = try float.transform.string(allocator);
-        defer string_transform.deinit(allocator);
-        try std.testing.expectEqualStrings("25", string_transform.value);
+        try std.testing.expectEqualStrings("25", transform.value);
     }
 }
 
-test "primitive bytes" {
+test "bytes" {
     const allocator = std.testing.allocator;
+    const flow_tag = try FlowTag.fromString("bytes");
 
-    const Bytes = FlowTypeFromString("bytes").?;
+    try std.testing.expect(flow_tag.hasMutation("upper"));
+    try std.testing.expect(flow_tag.hasMutation("lower"));
+    try std.testing.expect(flow_tag.hasTerminal("print"));
+
     var slice = "test".*;
-    var bytes = try Bytes.init(allocator, &slice);
-    defer bytes.deinit(allocator);
-    try std.testing.expectEqualStrings("test", bytes.value);
+    var flow_value = try FlowType.FromString("bytes").init(allocator, &slice);
+    defer flow_value.deinit(allocator);
 
-    bytes.mutation.upper();
-    try std.testing.expectEqualStrings("TEST", bytes.value);
-
-    bytes.mutation.lower();
-    try std.testing.expectEqualStrings("test", bytes.value);
+    try std.testing.expectEqualStrings("test", flow_value.value);
+    flow_value.mutation.upper();
+    try std.testing.expectEqualStrings("TEST", flow_value.value);
+    flow_value.mutation.lower();
+    try std.testing.expectEqualStrings("test", flow_value.value);
 }
 
-test "primitive string" {
-    const String = FlowTypeFromString("string").?;
+test "string" {
     const allocator = std.testing.allocator;
+    const flow_tag = try FlowTag.fromString("string");
 
-    var string = try String.init(allocator, "test");
-    defer string.deinit(allocator);
-    try std.testing.expectEqualStrings("test", string.value);
+    try std.testing.expect(flow_tag.hasTransform("upper"));
+    try std.testing.expect(flow_tag.hasTransform("lower"));
+    try std.testing.expect(flow_tag.hasTerminal("print"));
 
-    const upper = try string.transform.upper(allocator);
+    var flow_value = try FlowType.FromString("string").init(allocator, "test");
+    defer flow_value.deinit(allocator);
+
+    try std.testing.expectEqualStrings("test", flow_value.value);
+    const upper = try flow_value.transform.upper(allocator);
     defer upper.deinit(allocator);
     try std.testing.expectEqualStrings("TEST", upper.value);
-
-    const lower = try string.transform.lower(allocator);
+    const lower = try flow_value.transform.lower(allocator);
     defer lower.deinit(allocator);
     try std.testing.expectEqualStrings("test", lower.value);
 }

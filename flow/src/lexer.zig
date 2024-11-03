@@ -1,10 +1,18 @@
 const std = @import("std");
-
-const Lexer = @This();
+const Source = @import("source.zig");
 const Token = @import("token.zig");
 
+pub const Lexer = @This();
+
 index: usize,
-buffer: [:0]const u8,
+source: Source,
+
+pub fn init(source: Source) Lexer {
+    return .{
+        .index = 0,
+        .source = source,
+    };
+}
 
 pub const State = enum {
     start,
@@ -25,25 +33,15 @@ pub const State = enum {
     invalid,
 };
 
-pub fn init(buffer: [:0]const u8) Lexer {
-    return .{
-        .index = 0,
-        .buffer = buffer,
-    };
-}
-
 pub fn next(self: *Lexer) Token {
     var state = State.start;
-    var token = Token{
-        .kind = undefined,
-        .location = .{ .left = self.index, .right = undefined },
-    };
+    var token = Token.init(undefined, Token.Location.init(self.index, undefined));
 
     while (true) {
         switch (state) {
-            .start => switch (self.buffer[self.index]) {
+            .start => switch (self.source.buffer[self.index]) {
                 0 => {
-                    token.kind = .special_end_of_frame;
+                    token.tag = .end_of_frame;
                     break;
                 },
                 'a'...'z' => {
@@ -80,13 +78,13 @@ pub fn next(self: *Lexer) Token {
                 },
                 ' ', '\n', '\t', '\r' => {
                     self.index += 1;
-                    token.location.left = self.index;
+                    token.location.start = self.index;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .identifier => switch (self.buffer[self.index]) {
+            .identifier => switch (self.source.buffer[self.index]) {
                 'a'...'z' => {
                     self.index += 1;
                 },
@@ -94,15 +92,14 @@ pub fn next(self: *Lexer) Token {
                     self.index += 1;
                 },
                 0, ' ', '\n', '\t', '\r' => {
-                    const string = self.buffer[token.location.left..self.index];
-                    token.kind = Token.keywords.get(string) orelse .identifier;
+                    token.tag = .identifier;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .zero => switch (self.buffer[self.index]) {
+            .zero => switch (self.source.buffer[self.index]) {
                 '.' => {
                     self.index += 1;
                     state = .number_period;
@@ -111,7 +108,7 @@ pub fn next(self: *Lexer) Token {
                     state = .invalid;
                 },
             },
-            .number => switch (self.buffer[self.index]) {
+            .number => switch (self.source.buffer[self.index]) {
                 '0'...'9' => {
                     self.index += 1;
                     state = .number;
@@ -121,14 +118,14 @@ pub fn next(self: *Lexer) Token {
                     state = .number_period;
                 },
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .literal_int;
+                    token.tag = .int;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .number_period => switch (self.buffer[self.index]) {
+            .number_period => switch (self.source.buffer[self.index]) {
                 '0'...'9' => {
                     self.index += 1;
                     state = .float;
@@ -137,20 +134,20 @@ pub fn next(self: *Lexer) Token {
                     state = .invalid;
                 },
             },
-            .float => switch (self.buffer[self.index]) {
+            .float => switch (self.source.buffer[self.index]) {
                 '0'...'9' => {
                     self.index += 1;
                     state = .float;
                 },
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .literal_float;
+                    token.tag = .float;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .quote => switch (self.buffer[self.index]) {
+            .quote => switch (self.source.buffer[self.index]) {
                 '\\' => {
                     self.index += 1;
                     state = .quote_back_slash;
@@ -166,7 +163,7 @@ pub fn next(self: *Lexer) Token {
                     self.index += 1;
                 },
             },
-            .quote_back_slash => switch (self.buffer[self.index]) {
+            .quote_back_slash => switch (self.source.buffer[self.index]) {
                 '\\', 'n', 't', 'r', '\'' => {
                     self.index += 1;
                     state = .quote;
@@ -175,34 +172,34 @@ pub fn next(self: *Lexer) Token {
                     state = .invalid;
                 },
             },
-            .quote_quote => switch (self.buffer[self.index]) {
+            .quote_quote => switch (self.source.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .literal_string;
+                    token.tag = .string;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .colon => switch (self.buffer[self.index]) {
+            .colon => switch (self.source.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .symbol_colon;
+                    token.tag = .colon;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .pipe => switch (self.buffer[self.index]) {
+            .pipe => switch (self.source.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .operator_pipe;
+                    token.tag = .pipe;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .left_angle => switch (self.buffer[self.index]) {
+            .left_angle => switch (self.source.buffer[self.index]) {
                 '>' => {
                     self.index += 1;
                     state = .left_angle_right_angle;
@@ -211,16 +208,16 @@ pub fn next(self: *Lexer) Token {
                     state = .invalid;
                 },
             },
-            .left_angle_right_angle => switch (self.buffer[self.index]) {
+            .left_angle_right_angle => switch (self.source.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .operator_chain;
+                    token.tag = .chain;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .hyphen => switch (self.buffer[self.index]) {
+            .hyphen => switch (self.source.buffer[self.index]) {
                 '>' => {
                     self.index += 1;
                     state = .hyphen_right_angle;
@@ -229,18 +226,18 @@ pub fn next(self: *Lexer) Token {
                     state = .invalid;
                 },
             },
-            .hyphen_right_angle => switch (self.buffer[self.index]) {
+            .hyphen_right_angle => switch (self.source.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .operator_arrow;
+                    token.tag = .arrow;
                     break;
                 },
                 else => {
                     state = .invalid;
                 },
             },
-            .invalid => switch (self.buffer[self.index]) {
+            .invalid => switch (self.source.buffer[self.index]) {
                 0, ' ', '\n', '\t', '\r' => {
-                    token.kind = .special_invalid;
+                    token.tag = .invalid;
                     break;
                 },
                 else => {
@@ -250,687 +247,392 @@ pub fn next(self: *Lexer) Token {
         }
     }
 
-    token.location.right = self.index;
+    token.location.end = self.index;
     return token;
 }
 
-pub fn tokenize(self: *Lexer, allocator: std.mem.Allocator) !std.ArrayList(Token) {
-    var tokens = std.ArrayList(Token).init(allocator);
-    errdefer tokens.deinit();
-
-    while (true) {
-        const token = self.next();
-        try tokens.append(token);
-
-        if (token.kind.isSpecial()) {
-            break;
-        }
-    }
-
-    return tokens;
-}
-
-test "keyword" {
-    // Identifier tests
-    {
-        const keywords = comptime blk: {
-            var keywords: [Token.keywords.keys().len][:0]const u8 = undefined;
-            for (Token.keywords.keys(), 0..) |key, i| {
-                keywords[i] = key ++ &[_:0]u8{0};
-            }
-            break :blk keywords;
-        };
-
-        inline for (keywords, 0..) |keyword, i| {
-            const kind = Token.keywords.values()[i];
-            const size = keyword.len - 1;
-
-            // Basic identifier
-            {
-                var lexer = init(keyword);
-
-                try std.testing.expectEqual(Token{
-                    .kind = kind,
-                    .location = .{ .left = 0, .right = size },
-                }, lexer.next());
-            }
-
-            // Leading space
-            {
-                var lexer = init(" " ++ keyword);
-                try std.testing.expectEqual(Token{
-                    .kind = kind,
-                    .location = .{ .left = 1, .right = size + 1 },
-                }, lexer.next());
-            }
-
-            // Leading character
-            {
-                var lexer = init("x" ++ keyword);
-                try std.testing.expectEqual(Token{
-                    .kind = .identifier,
-                    .location = .{ .left = 0, .right = size + 1 },
-                }, lexer.next());
-            }
-
-            // Invalid character
-            {
-                var lexer = init("!" ++ keyword);
-
-                try std.testing.expectEqual(Token{
-                    .kind = .special_invalid,
-                    .location = .{ .left = 0, .right = size + 1 },
-                }, lexer.next());
-            }
-        }
-    }
-}
-
-test "symbols" {
-    const symbols = comptime blk: {
-        var symbols: [Token.symbols.keys().len][:0]const u8 = undefined;
-        for (Token.symbols.keys(), 0..) |key, i| {
-            symbols[i] = key ++ &[_:0]u8{0};
-        }
-        break :blk symbols;
-    };
-
-    inline for (symbols, 0..) |symbol, i| {
-        const kind = Token.symbols.values()[i];
-        const size = symbol.len - 1;
-
-        // Basic symbol
-        {
-            var lexer = init(symbol);
-
-            try std.testing.expectEqual(Token{
-                .kind = kind,
-                .location = .{ .left = 0, .right = size },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size, .right = size },
-            }, lexer.next());
-        }
-
-        // Leading space
-        {
-            var lexer = init(" " ++ symbol);
-
-            try std.testing.expectEqual(Token{
-                .kind = kind,
-                .location = .{ .left = 1, .right = size + 1 },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size + 1, .right = size + 1 },
-            }, lexer.next());
-        }
-
-        // Leading invalid (x)
-        {
-            var lexer = init("x" ++ symbol);
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_invalid,
-                .location = .{ .left = 0, .right = size + 1 },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size + 1, .right = size + 1 },
-            }, lexer.next());
-        }
-
-        // Leading invalid (!)
-        {
-            var lexer = init("!" ++ symbol);
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_invalid,
-                .location = .{ .left = 0, .right = size + 1 },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size + 1, .right = size + 1 },
-            }, lexer.next());
-        }
-
-        // Trailing space
-        {
-            var lexer = init(symbol ++ " ");
-
-            try std.testing.expectEqual(Token{
-                .kind = kind,
-                .location = .{ .left = 0, .right = size },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size, .right = size },
-            }, lexer.next());
-        }
-
-        // Trailing invalid (x)
-        {
-            var lexer = init(symbol ++ "x");
-
-            try std.testing.expectEqual(Token{
-                .kind = .symbol_colon,
-                .location = .{ .left = 0, .right = size },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size, .right = size },
-            }, lexer.next());
-        }
-
-        // Space on both sides
-        {
-            var lexer = init(" " ++ symbol ++ " ");
-
-            try std.testing.expectEqual(Token{
-                .kind = kind,
-                .location = .{ .left = 1, .right = size + 1 },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size + 1, .right = size + 1 },
-            }, lexer.next());
-        }
-
-        // Invalid on both sides
-        {
-            var lexer = init("x" ++ symbol ++ "x");
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_invalid,
-                .location = .{ .left = 0, .right = size + 1 },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = size + 1, .right = size + 1 },
-            }, lexer.next());
-        }
-    }
-}
-
 test "operators" {
-    // Basic operators
+    const allocator = std.testing.allocator;
+
+    // arrow
     {
-        var lexer = init("-> | <>");
+        // Base
+        {
+            var source = try Source.initString("->", allocator);
+            defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .operator_arrow,
-            .location = .{ .left = 0, .right = 2 },
-        }, lexer.next());
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.arrow, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
 
-        try std.testing.expectEqual(Token{
-            .kind = .operator_pipe,
-            .location = .{ .left = 3, .right = 4 },
-        }, lexer.next());
+        // Whitespace
+        {
+            var source = try Source.initString(" -> ", allocator);
+            defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .operator_chain,
-            .location = .{ .left = 5, .right = 7 },
-        }, lexer.next());
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.arrow, Token.Location.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 7, .right = 7 },
-        }, lexer.next());
+        // Split
+        {
+            var source = try Source.initString("- >", allocator);
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.invalid, Token.Location.init(0, 1)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.invalid, Token.Location.init(2, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
     }
 
-    // No spaces between operators (invalid)
+    // Chain
     {
-        var lexer = init("->|<>");
+        // Base
+        {
+            var source = try Source.initString("<>", allocator);
+            defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 0, .right = 5 },
-        }, lexer.next());
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.chain, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 5, .right = 5 },
-        }, lexer.next());
+        // Whitespace
+        {
+            var source = try Source.initString(" <> ", allocator);
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.chain, Token.Location.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Split
+        {
+            var source = try Source.initString("< >", allocator);
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.invalid, Token.Location.init(0, 1)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.invalid, Token.Location.init(2, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
     }
 
-    // Split operators (invalid)
+    // Colon
     {
-        var lexer = init("- > < > |");
+        // Base
+        {
+            var source = try Source.initString(":", allocator);
+            defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 0, .right = 1 },
-        }, lexer.next());
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.colon, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 2, .right = 3 },
-        }, lexer.next());
+        // Whitespace
+        {
+            var source = try Source.initString(" : ", allocator);
+            defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 4, .right = 5 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 6, .right = 7 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_pipe,
-            .location = .{ .left = 8, .right = 9 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 9, .right = 9 },
-        }, lexer.next());
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.colon, Token.Location.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
     }
 
-    // Invalid operator combinations
+    // Pipe
     {
-        var lexer = init("<- >< |>");
+        // Base
+        {
+            var source = try Source.initString("|", allocator);
+            defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 0, .right = 2 },
-        }, lexer.next());
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.pipe, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 3, .right = 5 },
-        }, lexer.next());
+        // Whitespace
+        {
+            var source = try Source.initString(" | ", allocator);
+            defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 6, .right = 8 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 8, .right = 8 },
-        }, lexer.next());
-    }
-
-    // Extra whitespace
-    {
-        var lexer = init("  ->     |   <>  ");
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_arrow,
-            .location = .{ .left = 2, .right = 4 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_pipe,
-            .location = .{ .left = 9, .right = 10 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_chain,
-            .location = .{ .left = 13, .right = 15 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 17, .right = 17 },
-        }, lexer.next());
-    }
-
-    // Invalid operator sequences
-    {
-        var lexer = init("-> | <>->");
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_arrow,
-            .location = .{ .left = 0, .right = 2 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_pipe,
-            .location = .{ .left = 3, .right = 4 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 5, .right = 9 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 9, .right = 9 },
-        }, lexer.next());
-    }
-
-    // Double operators (invalid)
-    {
-        var lexer = init("|| ->-> <><>");
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 0, .right = 2 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 3, .right = 7 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_invalid,
-            .location = .{ .left = 8, .right = 12 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 12, .right = 12 },
-        }, lexer.next());
-    }
-
-    // Multiple valid operators with spaces
-    {
-        var lexer = init("| | -> -> <> <>");
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_pipe,
-            .location = .{ .left = 0, .right = 1 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_pipe,
-            .location = .{ .left = 2, .right = 3 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_arrow,
-            .location = .{ .left = 4, .right = 6 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_arrow,
-            .location = .{ .left = 7, .right = 9 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_chain,
-            .location = .{ .left = 10, .right = 12 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .operator_chain,
-            .location = .{ .left = 13, .right = 15 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 15, .right = 15 },
-        }, lexer.next());
+            var lexer = Lexer.init(source);
+            try std.testing.expectEqual(
+                Token.init(.pipe, Token.Location.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
     }
 }
 
 test "literals" {
-    // Integer tests
+    const allocator = std.testing.allocator;
+
+    // Int
     {
         const numbers = "0123456789";
         inline for (0..numbers.len) |i| {
-            var lexer = init(numbers[i..] ++ numbers[0..i]);
+            const tag = if (i == 0) .invalid else .int;
 
-            switch (i) {
-                0 => {
-                    try std.testing.expectEqual(Token{
-                        .kind = .special_invalid,
-                        .location = .{ .left = 0, .right = 10 },
-                    }, lexer.next());
-                },
-                else => {
-                    try std.testing.expectEqual(Token{
-                        .kind = .literal_int,
-                        .location = .{ .left = 0, .right = 10 },
-                    }, lexer.next());
-                },
+            // Base
+            {
+                var source = try Source.initString(numbers[i..] ++ numbers[0..i], allocator);
+                defer source.deinit();
+
+                var lexer = Lexer.init(source);
+                try std.testing.expectEqual(
+                    Token.init(tag, Token.Location.init(0, source.buffer.len)),
+                    lexer.next(),
+                );
+                try std.testing.expectEqual(
+                    Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                    lexer.next(),
+                );
             }
 
-            try std.testing.expectEqual(Token{
-                .kind = .special_end_of_frame,
-                .location = .{ .left = 10, .right = 10 },
-            }, lexer.next());
+            // Whitespace
+            {
+                var source = try Source.initString(" " ++ numbers[i..] ++ numbers[0..i] ++ " ", allocator);
+                defer source.deinit();
+
+                var lexer = Lexer.init(source);
+                try std.testing.expectEqual(
+                    Token.init(tag, Token.Location.init(1, source.buffer.len - 1)),
+                    lexer.next(),
+                );
+                try std.testing.expectEqual(
+                    Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                    lexer.next(),
+                );
+            }
         }
     }
 
-    // Float tests
+    // Float
     {
         const numbers = "0123456789";
         inline for (0..numbers.len) |i| {
-            const rotate = numbers[i..] ++ numbers[0..i];
-            inline for (0..rotate.len + 1) |j| {
-                const float = rotate[0..j] ++ "." ++ rotate[j..];
-                var lexer = init(float);
-                switch (float[10]) {
-                    '.' => {
-                        try std.testing.expectEqual(Token{
-                            .kind = .special_invalid,
-                            .location = .{ .left = 0, .right = 11 },
-                        }, lexer.next());
-                    },
-                    else => switch (float[0]) {
-                        '.' => {
-                            try std.testing.expectEqual(Token{
-                                .kind = .special_invalid,
-                                .location = .{ .left = 0, .right = 11 },
-                            }, lexer.next());
-                        },
-                        '0' => switch (float[1]) {
-                            '.' => {
-                                try std.testing.expectEqual(Token{
-                                    .kind = .literal_float,
-                                    .location = .{ .left = 0, .right = 11 },
-                                }, lexer.next());
-                            },
-                            else => {
-                                try std.testing.expectEqual(Token{
-                                    .kind = .special_invalid,
-                                    .location = .{ .left = 0, .right = 11 },
-                                }, lexer.next());
-                            },
-                        },
-                        else => {
-                            try std.testing.expectEqual(Token{
-                                .kind = .literal_float,
-                                .location = .{ .left = 0, .right = 11 },
-                            }, lexer.next());
-                        },
-                    },
+            const rotated = numbers[i..] ++ numbers[0..i];
+            inline for (0..rotated.len + 1) |j| {
+                const tag = blk: {
+                    if (i == 0 and j != 1) break :blk .invalid;
+                    if (j == 0 or j == 10) break :blk .invalid;
+                    break :blk .float;
+                };
+
+                // Base
+                {
+                    var source = try Source.initString(rotated[0..j] ++ "." ++ rotated[j..], allocator);
+                    defer source.deinit();
+
+                    var lexer = Lexer.init(source);
+                    try std.testing.expectEqual(
+                        Token.init(tag, Token.Location.init(0, source.buffer.len)),
+                        lexer.next(),
+                    );
+                    try std.testing.expectEqual(
+                        Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                        lexer.next(),
+                    );
                 }
-                try std.testing.expectEqual(Token{
-                    .kind = .special_end_of_frame,
-                    .location = .{ .left = 11, .right = 11 },
-                }, lexer.next());
+
+                // Whitespace
+                {
+                    var source = try Source.initString(" " ++ rotated[0..j] ++ "." ++ rotated[j..] ++ " ", allocator);
+                    defer source.deinit();
+
+                    var lexer = Lexer.init(source);
+                    try std.testing.expectEqual(
+                        Token.init(tag, Token.Location.init(1, source.buffer.len - 1)),
+                        lexer.next(),
+                    );
+                    try std.testing.expectEqual(
+                        Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                        lexer.next(),
+                    );
+                }
             }
         }
     }
 
     // String tests
     {
-        // Basic string
+        // Base
         {
-            var lexer = init("'string literal'");
+            var source = try Source.initString("'string'", allocator);
+            defer source.deinit();
 
-            try std.testing.expectEqual(Token{
-                .kind = .literal_string,
-                .location = .{ .left = 0, .right = 16 },
-            }, lexer.next());
+            var lexer = init(source);
+            try std.testing.expectEqual(
+                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
         }
 
-        // Empty string
+        // Empty
         {
-            var lexer = init("''");
+            var source = try Source.initString("''", allocator);
+            defer source.deinit();
 
-            try std.testing.expectEqual(Token{
-                .kind = .literal_string,
-                .location = .{ .left = 0, .right = 2 },
-            }, lexer.next());
+            var lexer = init(source);
+            try std.testing.expectEqual(
+                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
         }
 
-        // Escaped quotes
+        // Escaped Quotes
         {
-            var lexer = init("'\\'escaped quotes\\''");
+            var source = try Source.initString("'\\'escaped quotes\\''", allocator);
+            defer source.deinit();
 
-            try std.testing.expectEqual(Token{
-                .kind = .literal_string,
-                .location = .{ .left = 0, .right = 20 },
-            }, lexer.next());
+            var lexer = init(source);
+            try std.testing.expectEqual(
+                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
         }
 
-        // Escaped characters
+        // Escaped Characters
         {
-            var lexer = init("'\\n\\t\\r\\'\\\\'");
+            var source = try Source.initString("'\\n\\t\\r\\'\\\\'", allocator);
+            defer source.deinit();
 
-            try std.testing.expectEqual(Token{
-                .kind = .literal_string,
-                .location = .{ .left = 0, .right = 12 },
-            }, lexer.next());
+            var lexer = init(source);
+            try std.testing.expectEqual(
+                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
         }
 
-        // Invalid escapes
+        // Invalid Escapes
         {
-            var lexer = init("'\\x'");
+            var source = try Source.initString("'\\x'", allocator);
+            defer source.deinit();
 
-            try std.testing.expectEqual(Token{
-                .kind = .special_invalid,
-                .location = .{ .left = 0, .right = 4 },
-            }, lexer.next());
-        }
-
-        // Multiple strings
-        {
-            var lexer = init("'one' 'two' 'three'");
-
-            try std.testing.expectEqual(Token{
-                .kind = .literal_string,
-                .location = .{ .left = 0, .right = 5 },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .literal_string,
-                .location = .{ .left = 6, .right = 11 },
-            }, lexer.next());
-
-            try std.testing.expectEqual(Token{
-                .kind = .literal_string,
-                .location = .{ .left = 12, .right = 19 },
-            }, lexer.next());
+            var lexer = init(source);
+            try std.testing.expectEqual(
+                Token.init(.invalid, Token.Location.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try std.testing.expectEqual(
+                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
         }
     }
 }
 
 test "whitespace" {
-    // Simple whitespace
-    {
-        var lexer = init(" ");
+    const allocator = std.testing.allocator;
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 1, .right = 1 },
-        }, lexer.next());
+    // Base
+    {
+        var source = try Source.initString(" \n \t \r", allocator);
+        defer source.deinit();
+
+        var lexer = Lexer.init(source);
+        try std.testing.expectEqual(
+            Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+            lexer.next(),
+        );
     }
 
-    // Mixed whitespace
+    // Empty
     {
-        var lexer = init(" \n\t\r");
+        var source = try Source.initString("", allocator);
+        defer source.deinit();
 
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 4, .right = 4 },
-        }, lexer.next());
-    }
-
-    // Empty string
-    {
-        var lexer = init("");
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 0, .right = 0 },
-        }, lexer.next());
-    }
-
-    // Whitespace between tokens
-    {
-        var lexer = init("a \n\t\r b");
-
-        try std.testing.expectEqual(Token{
-            .kind = .identifier,
-            .location = .{ .left = 0, .right = 1 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .identifier,
-            .location = .{ .left = 6, .right = 7 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 7, .right = 7 },
-        }, lexer.next());
-    }
-
-    // Leading whitespace
-    {
-        var lexer = init("   abc");
-
-        try std.testing.expectEqual(Token{
-            .kind = .identifier,
-            .location = .{ .left = 3, .right = 6 },
-        }, lexer.next());
-    }
-
-    // Trailing whitespace
-    {
-        var lexer = init("abc   ");
-
-        try std.testing.expectEqual(Token{
-            .kind = .identifier,
-            .location = .{ .left = 0, .right = 3 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 6, .right = 6 },
-        }, lexer.next());
-    }
-
-    // Multiple whitespace sequences
-    {
-        var lexer = init("  a  b  c  ");
-
-        try std.testing.expectEqual(Token{
-            .kind = .identifier,
-            .location = .{ .left = 2, .right = 3 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .identifier,
-            .location = .{ .left = 5, .right = 6 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .identifier,
-            .location = .{ .left = 8, .right = 9 },
-        }, lexer.next());
-
-        try std.testing.expectEqual(Token{
-            .kind = .special_end_of_frame,
-            .location = .{ .left = 11, .right = 11 },
-        }, lexer.next());
+        var lexer = Lexer.init(source);
+        try std.testing.expectEqual(
+            Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+            lexer.next(),
+        );
     }
 }

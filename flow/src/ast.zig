@@ -39,11 +39,12 @@ pub const Pipeline = struct {
 };
 
 pub const Stage = struct {
+    tag: core.FlowTag,
     steps: std.ArrayList(*Step),
 
-    pub fn init(allocator: std.mem.Allocator) !*Stage {
+    pub fn init(allocator: std.mem.Allocator, tag: core.FlowTag) !*Stage {
         const stage = try allocator.create(Stage);
-        stage.* = .{ .steps = std.ArrayList(*Step).init(allocator) };
+        stage.* = .{ .tag = tag, .steps = std.ArrayList(*Step).init(allocator) };
         return stage;
     }
 
@@ -56,31 +57,7 @@ pub const Stage = struct {
     }
 };
 
-pub const Step = union(enum) {
-    input: Input,
-    mutation: Mutation,
-    transform: Transform,
-    terminal: Terminal,
-
-    pub const Input = struct {
-        token: Token,
-        arguments: []Token,
-        input: core.Type.Tag,
-    };
-
-    pub const Mutation = struct {
-        name: Token,
-        args: []Token,
-    };
-
-    pub const Transform = struct {
-        name: Token,
-        args: []Token,
-        output: core.Type.Tag,
-    };
-
-    pub const Terminal = struct {
-        name: Token,
-        args: []Token,
-    };
+pub const Step = struct {
+    token: Token,
+    arguments: []Token,
 };

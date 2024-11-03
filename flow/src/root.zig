@@ -1,11 +1,15 @@
 const std = @import("std");
 
-pub const Flow = struct {
-    pub const Lexer = @import("lexer.zig");
-    // pub const Parser = @import("parser.zig");
-    // pub const Interpreter = @import("interpreter.zig");
-};
+const source = @import("source.zig");
+const token = @import("token.zig");
+const lexer = @import("lexer.zig");
+
+pub const Source = source.Source;
+pub const Token = token.Token;
+pub const Lexer = lexer.Lexer;
 
 test {
-    std.testing.refAllDecls(Flow);
+    std.testing.refAllDecls(source);
+    std.testing.refAllDecls(token);
+    std.testing.refAllDecls(lexer);
 }
