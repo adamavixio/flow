@@ -1,10 +1,86 @@
-## Examples
+# Flow
 
-- file : path 'path_1' <> path 'path_2' -> lines | sort asc -> print
-- file : path 'path_3' <> path 'path_4' -> lines | deduplicate
-- string : 'string' | sort asc | unique
+# Types
 
-- file : path 'path_1' <> path 'path_2' -> sort
+## Primitive
+
+### Boolean
+
+* bool
+
+### Unsigned Integer
+
+* uint
+* u16
+* u3zwxAQd
+* u64
+* u128
+
+> [!NOTE]
+> The 'uint' type is either 32-bit (u32) or 64-bit (u64) depending on computer architecture
+
+### Signed Integer
+
+* int
+* i16
+* i32
+* i64
+* i128
+
+> The 'int' type is either 32-bit (i32) or 64-bit (i64) depending on computer architecture
+
+### Floating Pointer Number
+
+* float
+* f16
+* f32
+* f64
+* f128
+
+> The 'float' type is 64-bit (f64)
+
+### String
+
+* string
+
+> The 'string' type is []const u8 and immutable
+
+## Syntax
+
+### Declaration
+
+```text
+[type] : [Expression]
+```
+
+### Examples
+
+```text
+int : 10
+file : path 'path/to/file.ext'
+```
+
+file :
+    path 'path_3' <>
+    path 'path_4' -> lines | deduplicate
+
+file
+    : path 'path_3'
+    <> path 'path_4'
+    -> lines | deduplicate ||
+
+* file <- path : 'path_1' <> path : 'path_2' -> lines | sort (asc) -> print
+* file : path 'path_3' <> path 'path_4' -> lines | deduplicate ||
+* string : 'string' | sort asc | unique
+
+file : path 'path_1' <> path 'path_2' -> sort => [name]
+[name] =>
+'name' =>
+
+file : path ('path_1') <> path ('path_2') -> lines | sort (asc) -> print
+int : 10 | add 5 -> out 'my_int'
+in : 'my_int' -> string -> print
+in : 'my_int' -> sub 5 -> print
 
 # Compiler Pipeline Guide
 
@@ -14,17 +90,17 @@
 
 **Components**:
 
-- `token.zig`: Defines token types and operations
-- `lexer.zig`: Implements the scanning process
+* `token.zig`: Defines token types and operations
+* `lexer.zig`: Implements the scanning process
 
 **Scope**:
 
-- Character-by-character analysis
-- Token identification
-- Error detection for invalid characters/sequences
-- Source location tracking
-- Whitespace handling
-- Comment handling
+* Character-by-character analysis
+* Token identification
+* Error detection for invalid characters/sequences
+* Source location tracking
+* Whitespace handling
+* Comment handling
 
 **Examples**:
 
@@ -58,18 +134,18 @@ file: path 'input.txt' -> lines | sort -> print
 
 **Components**:
 
-- `parser.zig`: Implements parsing logic
-- `ast.zig`: Defines tree structure
-- `error.zig`: Parser error handling
+* `parser.zig`: Implements parsing logic
+* `ast.zig`: Defines tree structure
+* `error.zig`: Parser error handling
 
 **Scope**:
 
-- Grammar rule validation
-- Tree construction
-- Error recovery
-- Expression parsing
-- Statement parsing
-- Basic type recognition
+* Grammar rule validation
+* Tree construction
+* Error recovery
+* Expression parsing
+* Statement parsing
+* Basic type recognition
 
 **Examples**:
 
@@ -100,21 +176,21 @@ mutation → "|" identifier
 
 **Components**:
 
-- `types.zig`: Type system implementation
-- `analyzer.zig`: Semantic validation
-- `symbols.zig`: Symbol table management
-- `scope.zig`: Scope tracking
+* `types.zig`: Type system implementation
+* `analyzer.zig`: Semantic validation
+* `symbols.zig`: Symbol table management
+* `scope.zig`: Scope tracking
 
 **Scope**:
 
-- Type checking
-- Type inference
-- Operation validation
-- Method availability
-- Pipeline compatibility
-- Symbol resolution
-- Scope management
-- Error detection
+* Type checking
+* Type inference
+* Operation validation
+* Method availability
+* Pipeline compatibility
+* Symbol resolution
+* Scope management
+* Error detection
 
 **Examples**:
 
@@ -137,18 +213,18 @@ int: 5 -> lines                  // Error: lines only works on file
 
 **Components**:
 
-- `trait.zig`: Type trait definitions
-- `method.zig`: Method registration
-- `registry.zig`: Type/method registry
+* `trait.zig`: Type trait definitions
+* `method.zig`: Method registration
+* `registry.zig`: Type/method registry
 
 **Scope**:
 
-- Method definitions
-- Type capabilities
-- Operation mapping
-- Method resolution
-- Type conversion
-- Plugin system
+* Method definitions
+* Type capabilities
+* Operation mapping
+* Method resolution
+* Type conversion
+* Plugin system
 
 **Examples**:
 
@@ -178,19 +254,19 @@ try registry.registerMethod("string", "split", splitImpl);
 
 **Components**:
 
-- `runtime.zig`: Execution engine
-- `value.zig`: Runtime value representation
-- `pipeline.zig`: Pipeline execution
-- `operations.zig`: Operation implementations
+* `runtime.zig`: Execution engine
+* `value.zig`: Runtime value representation
+* `pipeline.zig`: Pipeline execution
+* `operations.zig`: Operation implementations
 
 **Scope**:
 
-- Value management
-- Operation execution
-- Pipeline orchestration
-- Memory management
-- Error handling
-- I/O operations
+* Value management
+* Operation execution
+* Pipeline orchestration
+* Memory management
+* Error handling
+* I/O operations
 
 **Examples**:
 
@@ -224,18 +300,18 @@ fn executeTransform(value: *Value, op: Operation) !*Value {
 
 **Components**:
 
-- `plugin.zig`: Plugin system
-- `custom.zig`: Custom method support
-- `extension.zig`: Type extension
+* `plugin.zig`: Plugin system
+* `custom.zig`: Custom method support
+* `extension.zig`: Type extension
 
 **Scope**:
 
-- Plugin loading
-- Method registration
-- Type extension
-- Custom operations
-- User-defined methods
-- Error handling
+* Plugin loading
+* Method registration
+* Type extension
+* Custom operations
+* User-defined methods
+* Error handling
 
 **Examples**:
 
@@ -260,18 +336,18 @@ method file.word_count() -> int {
 
 **Components**:
 
-- `error.zig`: Error types and messages
-- `diagnostic.zig`: Error reporting
-- `recovery.zig`: Error recovery
+* `error.zig`: Error types and messages
+* `diagnostic.zig`: Error reporting
+* `recovery.zig`: Error recovery
 
 **Scope**:
 
-- Error detection
-- Error messages
-- Source location
-- Recovery strategies
-- Diagnostic output
-- Error aggregation
+* Error detection
+* Error messages
+* Source location
+* Recovery strategies
+* Diagnostic output
+* Error aggregation
 
 **Examples**:
 

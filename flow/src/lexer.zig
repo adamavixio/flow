@@ -1,6 +1,12 @@
 const std = @import("std");
-const Source = @import("source.zig");
-const Token = @import("token.zig");
+const testing = std.testing;
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+
+const root = @import("root.zig");
+const Token = root.Token;
+const Position = root.Position;
+const Source = root.Source;
 
 pub const Lexer = @This();
 
@@ -35,7 +41,7 @@ pub const State = enum {
 
 pub fn next(self: *Lexer) Token {
     var state = State.start;
-    var token = Token.init(undefined, Token.Location.init(self.index, undefined));
+    var token = Token.init(undefined, Position.init(self.index, undefined));
 
     while (true) {
         switch (state) {
@@ -76,9 +82,14 @@ pub fn next(self: *Lexer) Token {
                     self.index += 1;
                     state = .left_angle;
                 },
-                ' ', '\n', '\t', '\r' => {
+                '\n' => {
                     self.index += 1;
-                    token.location.start = self.index;
+                    token.tag = .new_line;
+                    break;
+                },
+                ' ', '\t', '\r' => {
+                    self.index += 1;
+                    token.position.start = self.index;
                 },
                 else => {
                     state = .invalid;
@@ -247,196 +258,61 @@ pub fn next(self: *Lexer) Token {
         }
     }
 
-    token.location.end = self.index;
+    token.position.end = self.index;
     return token;
 }
 
-test "operators" {
-    const allocator = std.testing.allocator;
+pub fn Tokenize(self: *Lexer, allocator: Allocator) !ArrayList(Token) {
+    var tokens = ArrayList(Token).init(allocator);
+    errdefer tokens.deinit();
 
-    // arrow
-    {
-        // Base
-        {
-            var source = try Source.initString("->", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.arrow, Token.Location.init(0, source.buffer.len)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
-
-        // Whitespace
-        {
-            var source = try Source.initString(" -> ", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.arrow, Token.Location.init(1, source.buffer.len - 1)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
-
-        // Split
-        {
-            var source = try Source.initString("- >", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.invalid, Token.Location.init(0, 1)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.invalid, Token.Location.init(2, source.buffer.len)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
+    while (true) {
+        const token = self.next();
+        try tokens.append(token);
+        if (token.tag == .end_of_frame) break;
     }
 
-    // Chain
+    return tokens;
+}
+
+test "identifiers" {
+    const allocator = testing.allocator;
+
+    // Base
     {
-        // Base
-        {
-            var source = try Source.initString("<>", allocator);
-            defer source.deinit();
+        var source = try Source.initString(allocator, "abc123zyz");
+        defer source.deinit();
 
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.chain, Token.Location.init(0, source.buffer.len)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
-
-        // Whitespace
-        {
-            var source = try Source.initString(" <> ", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.chain, Token.Location.init(1, source.buffer.len - 1)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
-
-        // Split
-        {
-            var source = try Source.initString("< >", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.invalid, Token.Location.init(0, 1)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.invalid, Token.Location.init(2, source.buffer.len)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
+        var lexer = Lexer.init(source);
+        try testing.expectEqual(
+            Token.init(.identifier, Position.init(0, source.buffer.len)),
+            lexer.next(),
+        );
+        try testing.expectEqual(
+            Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+            lexer.next(),
+        );
     }
 
-    // Colon
+    // Whitespace
     {
-        // Base
-        {
-            var source = try Source.initString(":", allocator);
-            defer source.deinit();
+        var source = try Source.initString(allocator, " abc123zyz ");
+        defer source.deinit();
 
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.colon, Token.Location.init(0, source.buffer.len)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
-
-        // Whitespace
-        {
-            var source = try Source.initString(" : ", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.colon, Token.Location.init(1, source.buffer.len - 1)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
-    }
-
-    // Pipe
-    {
-        // Base
-        {
-            var source = try Source.initString("|", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.pipe, Token.Location.init(0, source.buffer.len)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
-
-        // Whitespace
-        {
-            var source = try Source.initString(" | ", allocator);
-            defer source.deinit();
-
-            var lexer = Lexer.init(source);
-            try std.testing.expectEqual(
-                Token.init(.pipe, Token.Location.init(1, source.buffer.len - 1)),
-                lexer.next(),
-            );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
-                lexer.next(),
-            );
-        }
+        var lexer = Lexer.init(source);
+        try testing.expectEqual(
+            Token.init(.identifier, Position.init(1, source.buffer.len - 1)),
+            lexer.next(),
+        );
+        try testing.expectEqual(
+            Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+            lexer.next(),
+        );
     }
 }
 
 test "literals" {
-    const allocator = std.testing.allocator;
+    const allocator = testing.allocator;
 
     // Int
     {
@@ -446,32 +322,32 @@ test "literals" {
 
             // Base
             {
-                var source = try Source.initString(numbers[i..] ++ numbers[0..i], allocator);
+                var source = try Source.initString(allocator, numbers[i..] ++ numbers[0..i]);
                 defer source.deinit();
 
                 var lexer = Lexer.init(source);
-                try std.testing.expectEqual(
-                    Token.init(tag, Token.Location.init(0, source.buffer.len)),
+                try testing.expectEqual(
+                    Token.init(tag, Position.init(0, source.buffer.len)),
                     lexer.next(),
                 );
-                try std.testing.expectEqual(
-                    Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                try testing.expectEqual(
+                    Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                     lexer.next(),
                 );
             }
 
             // Whitespace
             {
-                var source = try Source.initString(" " ++ numbers[i..] ++ numbers[0..i] ++ " ", allocator);
+                var source = try Source.initString(allocator, " " ++ numbers[i..] ++ numbers[0..i] ++ " ");
                 defer source.deinit();
 
                 var lexer = Lexer.init(source);
-                try std.testing.expectEqual(
-                    Token.init(tag, Token.Location.init(1, source.buffer.len - 1)),
+                try testing.expectEqual(
+                    Token.init(tag, Position.init(1, source.buffer.len - 1)),
                     lexer.next(),
                 );
-                try std.testing.expectEqual(
-                    Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                try testing.expectEqual(
+                    Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                     lexer.next(),
                 );
             }
@@ -492,32 +368,32 @@ test "literals" {
 
                 // Base
                 {
-                    var source = try Source.initString(rotated[0..j] ++ "." ++ rotated[j..], allocator);
+                    var source = try Source.initString(allocator, rotated[0..j] ++ "." ++ rotated[j..]);
                     defer source.deinit();
 
                     var lexer = Lexer.init(source);
-                    try std.testing.expectEqual(
-                        Token.init(tag, Token.Location.init(0, source.buffer.len)),
+                    try testing.expectEqual(
+                        Token.init(tag, Position.init(0, source.buffer.len)),
                         lexer.next(),
                     );
-                    try std.testing.expectEqual(
-                        Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                    try testing.expectEqual(
+                        Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                         lexer.next(),
                     );
                 }
 
                 // Whitespace
                 {
-                    var source = try Source.initString(" " ++ rotated[0..j] ++ "." ++ rotated[j..] ++ " ", allocator);
+                    var source = try Source.initString(allocator, " " ++ rotated[0..j] ++ "." ++ rotated[j..] ++ " ");
                     defer source.deinit();
 
                     var lexer = Lexer.init(source);
-                    try std.testing.expectEqual(
-                        Token.init(tag, Token.Location.init(1, source.buffer.len - 1)),
+                    try testing.expectEqual(
+                        Token.init(tag, Position.init(1, source.buffer.len - 1)),
                         lexer.next(),
                     );
-                    try std.testing.expectEqual(
-                        Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+                    try testing.expectEqual(
+                        Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                         lexer.next(),
                     );
                 }
@@ -529,80 +405,303 @@ test "literals" {
     {
         // Base
         {
-            var source = try Source.initString("'string'", allocator);
+            var source = try Source.initString(allocator, "'string'");
             defer source.deinit();
 
             var lexer = init(source);
-            try std.testing.expectEqual(
-                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.string, Position.init(0, source.buffer.len)),
                 lexer.next(),
             );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                 lexer.next(),
             );
         }
 
         // Empty
         {
-            var source = try Source.initString("''", allocator);
+            var source = try Source.initString(allocator, "''");
             defer source.deinit();
 
             var lexer = init(source);
-            try std.testing.expectEqual(
-                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.string, Position.init(0, source.buffer.len)),
                 lexer.next(),
             );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                 lexer.next(),
             );
         }
 
         // Escaped Quotes
         {
-            var source = try Source.initString("'\\'escaped quotes\\''", allocator);
+            var source = try Source.initString(allocator, "'\\'escaped quotes\\''");
             defer source.deinit();
 
             var lexer = init(source);
-            try std.testing.expectEqual(
-                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.string, Position.init(0, source.buffer.len)),
                 lexer.next(),
             );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                 lexer.next(),
             );
         }
 
         // Escaped Characters
         {
-            var source = try Source.initString("'\\n\\t\\r\\'\\\\'", allocator);
+            var source = try Source.initString(allocator, "'\\n\\t\\r\\'\\\\'");
             defer source.deinit();
 
             var lexer = init(source);
-            try std.testing.expectEqual(
-                Token.init(.string, Token.Location.init(0, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.string, Position.init(0, source.buffer.len)),
                 lexer.next(),
             );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                 lexer.next(),
             );
         }
 
         // Invalid Escapes
         {
-            var source = try Source.initString("'\\x'", allocator);
+            var source = try Source.initString(allocator, "'\\x'");
             defer source.deinit();
 
             var lexer = init(source);
-            try std.testing.expectEqual(
-                Token.init(.invalid, Token.Location.init(0, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.invalid, Position.init(0, source.buffer.len)),
                 lexer.next(),
             );
-            try std.testing.expectEqual(
-                Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+    }
+}
+
+test "operators" {
+    const allocator = testing.allocator;
+
+    // arrow
+    {
+        // Base
+        {
+            var source = try Source.initString(allocator, "->");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.arrow, Position.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Whitespace
+        {
+            var source = try Source.initString(allocator, " -> ");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.arrow, Position.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Split
+        {
+            var source = try Source.initString(allocator, "- >");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.invalid, Position.init(0, 1)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.invalid, Position.init(2, source.buffer.len)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+    }
+
+    // Chain
+    {
+        // Base
+        {
+            var source = try Source.initString(allocator, "<>");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.chain, Position.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Whitespace
+        {
+            var source = try Source.initString(allocator, " <> ");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.chain, Position.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Split
+        {
+            var source = try Source.initString(allocator, "< >");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.invalid, Position.init(0, 1)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.invalid, Position.init(2, source.buffer.len)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+    }
+
+    // Colon
+    {
+        // Base
+        {
+            var source = try Source.initString(allocator, ":");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.colon, Position.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Whitespace
+        {
+            var source = try Source.initString(allocator, " : ");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.colon, Position.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+    }
+
+    // Pipe
+    {
+        // Base
+        {
+            var source = try Source.initString(allocator, "|");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.pipe, Position.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Whitespace
+        {
+            var source = try Source.initString(allocator, " | ");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.pipe, Position.init(1, source.buffer.len - 1)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+    }
+}
+
+test "specials" {
+    const allocator = testing.allocator;
+
+    // New Line
+    {
+        // Base
+        {
+            var source = try Source.initString(allocator, "\n");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.new_line, Position.init(0, source.buffer.len)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
+                lexer.next(),
+            );
+        }
+
+        // Whitespace
+        {
+            var source = try Source.initString(allocator, " \t\r\n\t ");
+            defer source.deinit();
+
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                Token.init(.new_line, Position.init(3, source.buffer.len - 2)),
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
                 lexer.next(),
             );
         }
@@ -610,28 +709,28 @@ test "literals" {
 }
 
 test "whitespace" {
-    const allocator = std.testing.allocator;
+    const allocator = testing.allocator;
 
     // Base
     {
-        var source = try Source.initString(" \n \t \r", allocator);
+        var source = try Source.initString(allocator, " \t \r");
         defer source.deinit();
 
         var lexer = Lexer.init(source);
-        try std.testing.expectEqual(
-            Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+        try testing.expectEqual(
+            Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
             lexer.next(),
         );
     }
 
     // Empty
     {
-        var source = try Source.initString("", allocator);
+        var source = try Source.initString(allocator, "");
         defer source.deinit();
 
         var lexer = Lexer.init(source);
-        try std.testing.expectEqual(
-            Token.init(.end_of_frame, Token.Location.init(source.buffer.len, source.buffer.len)),
+        try testing.expectEqual(
+            Token.init(.end_of_frame, Position.init(source.buffer.len, source.buffer.len)),
             lexer.next(),
         );
     }
