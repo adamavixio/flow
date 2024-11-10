@@ -13,12 +13,6 @@ const Token = root.Token;
 
 pub const Parser = @This();
 
-arena: *ArenaAllocator,
-index: usize,
-token: Token,
-source: Source,
-tokens: ArrayList(Token),
-
 pub const Error = error{
     InvalidPipeline,
     InvalidStage,
@@ -27,6 +21,12 @@ pub const Error = error{
     InvalidTypeDeclaration,
     InvalidExpression,
 } || Allocator.Error;
+
+arena: *ArenaAllocator,
+index: usize,
+token: Token,
+source: Source,
+tokens: ArrayList(Token),
 
 pub fn init(arena: *ArenaAllocator, source: Source, tokens: ArrayList(Token)) Parser {
     return .{
@@ -244,6 +244,4 @@ test "parser" {
     var parser = init(&arena, source, tokens);
     const ast = try parser.parse();
     defer ast.deinit();
-
-    ast.walk();
 }
