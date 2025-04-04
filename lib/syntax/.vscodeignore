@@ -1,6 +1,0 @@
-.vscode/**
-.vscode-test/**
-
-.gitignore
-bun.lockb
-vsc-extension-quickstart.md

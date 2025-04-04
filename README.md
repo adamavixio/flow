@@ -69,9 +69,9 @@ file
     <> path 'path_4'
     -> lines | deduplicate ||
 
-* file <- path : 'path_1' <> path : 'path_2' -> lines | sort (asc) -> print
+* file <- path : 'path_1' <> path : 'path_2' -> lines | sort .asc -> print
 * file : path 'path_3' <> path 'path_4' -> lines | deduplicate ||
-* string : 'string' | sort asc | unique
+* string : 'string' | sort .asc | unique
 
 file : path 'path_1' <> path 'path_2' -> sort => [name]
 [name] =>
@@ -119,7 +119,7 @@ file: path 'input.txt' -> lines | sort -> print
 [identifier "file"]
 [colon ":"]
 [identifier "path"]
-[literal_string "input.txt"]
+[string "input.txt"]
 [arrow "->"]
 [identifier "lines"]
 [pipe "|"]
