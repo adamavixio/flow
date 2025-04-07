@@ -238,23 +238,18 @@ pub fn next(self: *Lexer) flow.Token {
     return token;
 }
 
-pub fn peek(self: *Lexer) flow.Token {
-    var clone = self.*;
-    return clone.next();
+pub fn tokenize(self: *Lexer, allocator: mem.Allocator) ![]flow.Token {
+    var tokens = std.ArrayList(flow.Token).init(allocator);
+    defer tokens.deinit();
+
+    while (true) {
+        const token = self.next();
+        try tokens.append(token);
+        if (token.tag == .end_of_frame) break;
+    }
+
+    return tokens.toOwnedSlice();
 }
-
-// pub fn Tokenize(self: *Lexer, allocator: mem.Allocator) !std.ArrayList(flow.Token) {
-//     var tokens = std.ArrayList(flow.Token).init(allocator);
-//     errdefer tokens.deinit();
-
-//     while (true) {
-//         const token = self.next();
-//         try tokens.append(token);
-//         if (token.tag == .end_of_frame)
-//     }
-
-//     return tokens;
-// }
 
 test "identifiers" {
     const allocator = testing.allocator;

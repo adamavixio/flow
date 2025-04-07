@@ -3,78 +3,226 @@ const heap = std.heap;
 const mem = std.mem;
 const testing = std.testing;
 
-const root = @import("../root.zig");
-const flow = root.flow;
+const lib = @import("../root.zig");
+const core = lib.core;
+const io = lib.io;
+const flow = lib.flow;
 
-pub const Parser = @This();
+const Parser = @This();
 
-lexer: flow.Lexer,
-source: flow.Source,
+index: usize,
+tokens: []flow.Token,
+source: io.Source,
 allocator: mem.Allocator,
 
-pub const Error = error{
-    ExpectedIdentifier,
-    ExpectedLiteral,
-    ExpectedOperatorColon,
-};
-
-pub fn init(allocator: mem.Allocator, source: flow.Source) Parser {
-    return .{ .source = source, .lexer = flow.Lexer.init(source), .allocator = allocator };
+pub fn init(allocator: mem.Allocator, source: io.Source) !Parser {
+    var lexer = flow.Lexer.init(source);
+    const tokens = try lexer.tokenize(allocator);
+    return .{
+        .index = 0,
+        .source = source,
+        .tokens = tokens,
+        .allocator = allocator,
+    };
 }
 
-pub fn parse(self: *Parser) !*flow.AST.Node {
-    return self.parseDeclaration();
+pub fn parse(self: *Parser) !flow.AST {
+    var statements = std.ArrayList(flow.AST.Statement).init(self.allocator);
+    defer statements.deinit();
+
+    while (self.peekToken(0).tag != .end_of_frame) {
+        const statement = try self.parseStatementPipeline();
+        try statements.append(statement);
+    }
+
+    return .{ .statements = try statements.toOwnedSlice() };
 }
 
 test parse {
     var arena = heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    const input = "string : 'test' | upper -> concat 'ing' -> print";
-    const source = try flow.Source.initString(arena.allocator(), input);
+    const input = "int : 5 | add 10 | sub 5 -> string | test -> print";
+    const source = try io.Source.initString(arena.allocator(), input);
 
-    var parser = init(arena.allocator(), source);
-    const actual = try parser.parse();
-    std.debug.print("{any}\n", .{actual});
+    var parser = try init(arena.allocator(), source);
+    _ = try parser.parse();
 }
 
-pub fn parsePipeline(self: *Parser) !*flow.AST.Node {
-    const declaration = try self.parseDeclaration();
+fn parseStatementPipeline(self: *Parser) !flow.AST.Statement {
+    return .{
+        .pipeline = .{
+            .type = try self.parseExpressionType(),
+            .transforms = try self.parseExpressionTransforms(),
+        },
+    };
 }
 
-pub fn parseExpression(self: *Parser) !*flow.AST.Node {
-    while (self.lexer.peek().tag == .chain) {
-        _ = self.lexer.next();
-    }
+fn parseExpressionType(self: *Parser) !flow.AST.ExpressionType {
+    return switch (self.peekToken(0).tag) {
+        .identifier => switch (self.peekToken(1).tag) {
+            .colon => .{
+                .name = self.consumeToken(),
+                .parameter = blk: {
+                    self.skipToken();
+                    break :blk try self.parseExpressionParameter();
+                },
+                .operations = try self.parseExpressionOperations(),
+            },
+            else => flow.Error.ParserExpectedColon,
+        },
+        else => flow.Error.ParserExpectedIdentifier,
+    };
 }
 
-pub fn parseOperation(self: *Parser, identifier: []const u8) !*flow.AST.Node {
-    const token = self.lexer.next();
-    if (!token.isIdentifier()) return Error.ExpectedIdentifier;
-    const content = self.source.buffer[token.start..token.end];
-    const args = std.ArrayList(*flow.AST.Node).init(self.allocator);
-    while (self.lexer.peek().tag == .identifier) {
-        const literal = try self.parseLiteral(content)
-    }
+fn parseExpressionTransforms(self: *Parser) ![]flow.AST.ExpressionTransform {
+    var transforms = std.ArrayList(flow.AST.ExpressionTransform).init(self.allocator);
+    return while (self.parseExpressionTransform()) |transform| {
+        try transforms.append(transform);
+    } else |err| switch (err) {
+        flow.Error.ParserExpectedArrow => try transforms.toOwnedSlice(),
+        else => err,
+    };
 }
 
-
-pub fn parseDeclaration(self: *Parser) !*flow.AST.Node {
-    const token = self.lexer.next();
-    if (!token.isIdentifier()) return Error.ExpectedIdentifier;
-    if (self.lexer.next().tag != .colon) return Error.ExpectedOperatorColon;
-    const content = self.source.buffer[token.start..token.end];
-    const literal = try self.parseLiteral(content);
-    return flow.AST.Declaration.create(self.allocator, content, literal);
+fn parseExpressionTransform(self: *Parser) !flow.AST.ExpressionTransform {
+    return switch (self.peekToken(0).tag) {
+        .arrow => blk: {
+            self.skipToken();
+            break :blk switch (self.peekToken(0).tag) {
+                .identifier => .{
+                    .name = self.consumeToken(),
+                    .parameters = try self.parseExpressionParameters(),
+                    .operations = try self.parseExpressionOperations(),
+                },
+                else => flow.Error.ParserExpectedIdentifier,
+            };
+        },
+        else => flow.Error.ParserExpectedArrow,
+    };
 }
 
-pub fn parseLiteral(self: *Parser, identifier: []const u8) !*flow.AST.Node {
-    const token = self.lexer.next();
-    if (!token.isLiteral()) return Error.ExpectedOperatorColon;
-    const content = self.source.buffer[token.start..token.end];
-    const value = try flow.core.Value.init(self.allocator, identifier, content);
-    return flow.AST.Literal.create(self.allocator, value);
+fn parseExpressionOperations(self: *Parser) ![]flow.AST.ExpressionOperation {
+    var operations = std.ArrayList(flow.AST.ExpressionOperation).init(self.allocator);
+    return while (self.parseExpressionOperation()) |operation| {
+        try operations.append(operation);
+    } else |err| switch (err) {
+        flow.Error.ParserExpectedPipe => try operations.toOwnedSlice(),
+        else => err,
+    };
 }
+
+fn parseExpressionOperation(self: *Parser) !flow.AST.ExpressionOperation {
+    return switch (self.peekToken(0).tag) {
+        .pipe => blk: {
+            self.skipToken();
+            break :blk switch (self.peekToken(0).tag) {
+                .identifier => .{
+                    .name = self.consumeToken(),
+                    .parameters = try self.parseExpressionParameters(),
+                },
+                else => flow.Error.ParserExpectedIdentifier,
+            };
+        },
+        else => flow.Error.ParserExpectedPipe,
+    };
+}
+
+fn parseExpressionParameters(self: *Parser) ![]flow.AST.ExpressionParameter {
+    var parameters = std.ArrayList(flow.AST.ExpressionParameter).init(self.allocator);
+    return while (self.parseExpressionParameter()) |parameter| {
+        try parameters.append(parameter);
+    } else |err| switch (err) {
+        flow.Error.ParserExpectedParameter => try parameters.toOwnedSlice(),
+        else => err,
+    };
+}
+
+fn parseExpressionParameter(self: *Parser) !flow.AST.ExpressionParameter {
+    return switch (self.peekToken(0).tag) {
+        .int, .float => .{ .literal = self.consumeToken() },
+        else => flow.Error.ParserExpectedParameter,
+    };
+}
+
+fn peekToken(self: *Parser, offset: usize) flow.Token {
+    return self.tokens[self.index + offset];
+}
+
+fn skipToken(self: *Parser) void {
+    self.index += 1;
+}
+
+fn consumeToken(self: *Parser) []const u8 {
+    const token = self.tokens[self.index];
+    self.index += 1;
+    return self.source.buffer[token.start..token.end];
+}
+
+// fn parseStatement(
+//     allocator: mem.Allocator,
+//     source: io.Source,
+//     tokens: []flow.Token,
+//     index: *usize,
+// ) !flow.AST.Statement {}
+
+// fn parseStage(self: Parser) !flow.AST.Stage {
+//     const token = self.lexer.next();
+//     switch (token.tag) {
+//         .identifier => {
+//             if (!self.lexer.next().tag != .colon)
+//                 return flow.Error.ParserExpectedOperatorColon;
+//             const lexeme = self.lexer.exchange(token);
+//             return self.parseStageInput(@"type");
+//         },
+//     }
+// }
+
+// fn parseExpression(self: *Parser, @"type": core.Type) !flow.AST.Pipeline {
+//     const token = self.lexer.next();
+//     switch (token.tag) {
+//         .identifier => {
+//             const identifier = self.lexer.exchange(token);
+//             if (!core.Value.hasType(identifier))
+//                 return flow.Error.ParserExpectedIdentifierType;
+//             if (!self.lexer.next().tag != .colon)
+//                 return flow.Error.ParserExpectedOperatorColon;
+//         },
+//     }
+// }
+
+// pub fn parseExpression(self: *Parser) !*flow.AST.Node {
+//     while (self.lexer.peek().tag == .chain) {
+//         _ = self.lexer.next();
+//     }
+// }
+
+// pub fn parseOperation(self: *Parser, identifier: []const u8) !*flow.AST.Node {
+//     const token = self.lexer.next();
+//     if (!token.isIdentifier()) return Error.ExpectedIdentifier;
+//     const content = self.source.buffer[token.start..token.end];
+//     const args = std.ArrayList(*flow.AST.Node).init(self.allocator);
+//     while (self.lexer.peek().tag == .identifier) {
+//         const literal = try self.parseLiteral(content)
+//     }
+// }
+
+// pub fn parseDeclaration(self: *Parser) !*flow.AST.Node {
+//     const token = self.lexer.next();
+//     if (!token.isIdentifier()) return Error.ExpectedIdentifier;
+//     if (self.lexer.next().tag != .colon) return Error.ExpectedOperatorColon;
+//     const content = self.source.buffer[token.start..token.end];
+//     const literal = try self.parseLiteral(content);
+//     return flow.AST.Declaration.create(self.allocator, content, literal);
+// }
+
+// pub fn parseLiteral(self: *Parser, identifier: []const u8) !*flow.AST.Node {
+//     const token = self.lexer.next();
+//     if (!token.isLiteral()) return Error.ExpectedOperatorColon;
+//     const content = self.source.buffer[token.start..token.end];
+//     const value = try flow.core.Value.init(self.allocator, identifier, content);
+//     return flow.AST.Literal.create(self.allocator, value);
+// }
 
 // pub fn parsePipeline(self: *Parser) Error!*flow.AST.Node {
 //     var left = parseExpressionn():

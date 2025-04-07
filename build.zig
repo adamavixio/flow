@@ -8,6 +8,12 @@ pub fn build(builder: *std.Build) void {
     // Modules
     //
 
+    const core_module = builder.createModule(.{
+        .root_source_file = builder.path("src/core/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const flow_module = builder.createModule(.{
         .root_source_file = builder.path("src/flow/root.zig"),
         .target = target,
@@ -31,15 +37,9 @@ pub fn build(builder: *std.Build) void {
         .optimize = optimize,
     });
 
-    flow_executable.root_module.addImport(
-        "flow",
-        flow_module,
-    );
-
-    flow_executable.root_module.addImport(
-        "io",
-        io_module,
-    );
+    flow_executable.root_module.addImport("core", core_module);
+    flow_executable.root_module.addImport("flow", flow_module);
+    flow_executable.root_module.addImport("io", io_module);
 
     builder.installArtifact(flow_executable);
 

@@ -69,7 +69,7 @@ file
     <> path 'path_4'
     -> lines | deduplicate ||
 
-* file <- path : 'path_1' <> path : 'path_2' -> lines | sort .asc -> print
+* file <- path <> 'path_1' || path <> 'path_2' -> lines | sort <> asc -> print
 * file : path 'path_3' <> path 'path_4' -> lines | deduplicate ||
 * string : 'string' | sort .asc | unique
 
@@ -77,6 +77,7 @@ file : path 'path_1' <> path 'path_2' -> sort => [name]
 [name] =>
 'name' =>
 
+file : path 'path_1' <> path 'path_2' -> lines | sort asc -> print
 file : path ('path_1') <> path ('path_2') -> lines | sort (asc) -> print
 int : 10 | add 5 -> out 'my_int'
 in : 'my_int' -> string -> print

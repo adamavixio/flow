@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const value = @import("value.zig");
+pub const Error = @import("error.zig").Error;
+pub const Type = @import("type.zig");
 
 test {
     std.testing.refAllDecls(@This());
