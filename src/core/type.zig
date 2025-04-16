@@ -8,6 +8,7 @@ const meta = std.meta;
 const testing = std.testing;
 
 pub const Error = error{
+    ParseTypeFailed,
     ParseValueFailed,
     ParseMutationFailed,
     ParseTransformFailed,
@@ -23,6 +24,11 @@ pub const Tag = enum {
     string,
     tuple,
     void,
+
+    pub fn parse(name: []const u8) !Tag {
+        if (meta.stringToEnum(Tag, name)) |tag| return tag;
+        return Error.ParseTypeFailed;
+    }
 };
 
 pub fn Build(comptime tag: Tag) type {
@@ -60,6 +66,9 @@ test Mutation {
 }
 
 pub const Transform = union(enum) {
+    int,
+    uint,
+    float,
     string,
     print: std.io.AnyWriter,
 
@@ -158,6 +167,18 @@ pub const Value = union(Tag) {
 
     pub fn typedTransform(self: Value, transform: meta.FieldEnum(Transform)) ![]const Tag {
         return switch (transform) {
+            .int => switch (self) {
+                inline .uint => &.{},
+                else => Error.InvalidTransform,
+            },
+            .uint => switch (self) {
+                inline .int => &.{},
+                else => Error.InvalidTransform,
+            },
+            .float => switch (self) {
+                inline .int, .uint => &.{},
+                else => Error.InvalidTransform,
+            },
             .string => switch (self) {
                 inline .int, .uint, .float => &.{},
                 else => Error.InvalidTransform,
@@ -168,6 +189,27 @@ pub const Value = union(Tag) {
 
     pub fn applyTransform(self: Value, allocator: mem.Allocator, transform: Transform, _: []Value) !Value {
         return switch (transform) {
+            .int => switch (self) {
+                inline .uint => |value| init(.int, .{
+                    .owned = false,
+                    .data = @intCast(value.data),
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .uint => switch (self) {
+                inline .int => |value| init(.uint, .{
+                    .owned = false,
+                    .data = @intCast(value.data),
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .float => switch (self) {
+                inline .uint, .int => |value| init(.float, .{
+                    .owned = false,
+                    .data = @floatFromInt(value.data),
+                }),
+                else => return Error.InvalidTransform,
+            },
             .string => switch (self) {
                 inline .int, .uint, .float => |value| blk: {
                     break :blk init(.string, .{
@@ -301,6 +343,54 @@ test Value {
     // Transforms
     inline for (comptime meta.tags(meta.FieldEnum(Transform))) |transform| {
         switch (transform) {
+            .int => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .uint => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
+
+                        const coercion = try value.typedTransform(.int);
+                        try testing.expectEqualSlices(Tag, &.{}, coercion);
+
+                        const coerced = try value.applyTransform(testing.allocator, .int, &.{});
+                        defer coerced.deinit(testing.allocator);
+                        try testing.expectEqual(Value.init(.int, .{ .owned = false, .data = 5 }), coerced);
+                    },
+                    else => {},
+                }
+            },
+            .uint => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
+
+                        const coercion = try value.typedTransform(.uint);
+                        try testing.expectEqualSlices(Tag, &.{}, coercion);
+
+                        const coerced = try value.applyTransform(testing.allocator, .uint, &.{});
+                        defer coerced.deinit(testing.allocator);
+                        try testing.expectEqual(Value.init(.uint, .{ .owned = false, .data = 5 }), coerced);
+                    },
+                    else => {},
+                }
+            },
+            .float => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int, .uint => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
+
+                        const coercion = try value.typedTransform(.float);
+                        try testing.expectEqualSlices(Tag, &.{}, coercion);
+
+                        const coerced = try value.applyTransform(testing.allocator, .float, &.{});
+                        defer coerced.deinit(testing.allocator);
+                        try testing.expectEqual(Value.init(.float, .{ .owned = false, .data = 5 }), coerced);
+                    },
+                    else => {},
+                }
+            },
             .string => inline for (comptime meta.tags(Tag)) |tag| {
                 switch (tag) {
                     .int, .uint, .float => {
@@ -346,282 +436,3 @@ test Value {
         }
     }
 }
-
-// pub const Mutation = enum {
-//     add,
-//     sub,
-//     mul,
-//     div,
-// };
-
-// pub fn parseMutation(self: Value, literal: []const u8) ![]const Tag {
-//     if (meta.stringToEnum(Mutation, literal)) |tag| {
-//         return switch (tag) {
-//             .add => switch (self.data) {
-//                 .int => &.{.int},
-//                 .uint => &.{.uint},
-//                 .float => &.{.float},
-//                 else => Error.InvalidMutation,
-//             },
-//             .sub => switch (self.data) {
-//                 .int => &.{.int},
-//                 .uint => &.{.uint},
-//                 .float => &.{.float},
-//                 else => Error.InvalidMutation,
-//             },
-//             .mul => switch (self.data) {
-//                 .int => &.{.int},
-//                 .uint => &.{.uint},
-//                 .float => &.{.float},
-//                 else => Error.InvalidMutation,
-//             },
-//             .div => switch (self.data) {
-//                 .int => &.{.int},
-//                 .uint => &.{.uint},
-//                 .float => &.{.float},
-//                 else => Error.InvalidMutation,
-//             },
-//         };
-//     }
-//     return Error.InvalidMutation;
-// }
-
-// pub fn applyMutation(
-//     self: *Value,
-//     mutation: Mutation,
-//     parameters: []Value,
-// ) !void {
-//     return switch (mutation) {
-//         .add => switch (self.data) {
-//             .int => self.data.int += parameters[0].data.int,
-//             .uint => self.data.uint += parameters[0].data.uint,
-//             .float => self.data.float += parameters[0].data.float,
-//             else => Error.InvalidMutation,
-//         },
-//         .sub => switch (self.data) {
-//             .int => self.data.int -= parameters[0].data.int,
-//             .uint => self.data.uint -= parameters[0].data.uint,
-//             .float => self.data.float -= parameters[0].data.float,
-//             else => Error.InvalidMutation,
-//         },
-//         .mul => switch (self.data) {
-//             .int => self.data.int *= parameters[0].data.int,
-//             .uint => self.data.uint *= parameters[0].data.uint,
-//             .float => self.data.float *= parameters[0].data.float,
-//             else => Error.InvalidMutation,
-//         },
-//         .div => switch (self.data) {
-//             .int => self.data.int = @divTrunc(self.data.int, parameters[0].data.int),
-//             .uint => self.data.uint = @divTrunc(self.data.uint, parameters[0].data.uint),
-//             .float => self.data.float /= parameters[0].data.float,
-//             else => Error.InvalidMutation,
-//         },
-//     };
-// }
-
-// pub const Transform = union(enum) {
-//     string,
-//     print: io.AnyWriter,
-// };
-
-// pub fn parseTransform(self: Value, literal: []const u8) ![]const Tag {
-//     if (meta.stringToEnum(meta.FieldEnum(Transform), literal)) |tag| {
-//         return switch (tag) {
-//             .string => switch (self.data) {
-//                 .int => &.{},
-//                 .uint => &.{},
-//                 .float => &.{},
-//                 else => Error.InvalidTransform,
-//             },
-//             .print => switch (self.data) {
-//                 .int => &.{},
-//                 .uint => &.{},
-//                 .float => &.{},
-//                 .string => &.{},
-//                 .tuple => &.{},
-//                 .void => &.{},
-//             },
-//         };
-//     }
-//     return Error.InvalidTransform;
-// }
-
-// pub fn applyTransform(
-//     self: Value,
-//     allocator: mem.Allocator,
-//     transform: Transform,
-//     _: []Value,
-// ) !Value {
-//     return switch (transform) {
-//         .string => switch (self.data) {
-//             .int => |v| .{
-//                 .owned = true,
-//                 .data = initData(.string, try fmt.allocPrint(allocator, "{d}", .{v})),
-//             },
-//             .uint => |v| .{
-//                 .owned = true,
-//                 .data = initData(.string, try fmt.allocPrint(allocator, "{d}", .{v})),
-//             },
-//             .float => |v| .{
-//                 .owned = true,
-//                 .data = initData(.string, try fmt.allocPrint(allocator, "{d}", .{v})),
-//             },
-//             else => Error.InvalidMutation,
-//         },
-//         .print => |w| switch (self.data) {
-//             .int => |v| blk: {
-//                 try w.print("{d}", .{v});
-//                 break :blk .{
-//                     .owned = false,
-//                     .data = initData(.void, {}),
-//                 };
-//             },
-//             .uint => |v| blk: {
-//                 try w.print("{d}", .{v});
-//                 break :blk .{
-//                     .owned = false,
-//                     .data = initData(.void, {}),
-//                 };
-//             },
-//             .float => |v| blk: {
-//                 try w.print("{d}", .{v});
-//                 break :blk .{
-//                     .owned = false,
-//                     .data = initData(.void, {}),
-//                 };
-//             },
-//             .string => |v| blk: {
-//                 try w.print("{s}", .{v});
-//                 break :blk .{
-//                     .owned = false,
-//                     .data = initData(.void, {}),
-//                 };
-//             },
-//             .tuple => .{
-//                 .owned = false,
-//                 .data = initData(.void, {}),
-//             },
-//             .void => .{
-//                 .owned = false,
-//                 .data = initData(.void, {}),
-//             },
-//         },
-//     };
-// }
-
-// pub const Comparison = enum {
-//     equal,
-// };
-
-// pub fn compare(self: Value, comparison: Comparison, other: Value) bool {
-//     return switch (comparison) {
-//         .equal => switch (self.data) {
-//             .int => self.data.int == other.data.int,
-//             .uint => self.data.uint == other.data.uint,
-//             .float => self.data.float == other.data.float,
-//             .string => mem.eql(u8, self.data.string, other.data.string),
-//             .tuple => false,
-//             .void => false,
-//         },
-//     };
-// }
-
-// test Transform {
-//     @setEvalBranchQuota(10_000);
-//     for (meta.tags(meta.FieldEnum(Transform))) |transform| {
-//         switch (transform) {
-//             .string => inline for (comptime meta.tags(Tag)) |tag| {
-//                 switch (tag) {
-//                     .int, .uint, .float => {
-//                         var value = try parse(testing.allocator, tag, "5");
-//                         defer value.deinit(testing.allocator);
-
-//                         const string_params = try value.parseTransform("string");
-//                         try testing.expectEqualSlices(Tag, &.{}, string_params);
-
-//                         const string = try value.applyTransform(testing.allocator, .string, &.{});
-//                         defer string.deinit(testing.allocator);
-
-//                         try testing.expect(string.compare(.equal, .{
-//                             .owned = false,
-//                             .data = initData(.string, "5"),
-//                         }));
-//                     },
-//                     else => {},
-//                 }
-//             },
-//             .print => inline for (comptime meta.tags(Tag)) |tag| {
-//                 switch (tag) {
-//                     .int, .uint, .float => {
-//                         var value = try parse(testing.allocator, tag, "5");
-//                         defer value.deinit(testing.allocator);
-
-//                         const print_params = try value.parseTransform("print");
-//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
-
-//                         var buffer = std.ArrayList(u8).init(testing.allocator);
-//                         defer buffer.deinit();
-//                         _ = try value.applyTransform(
-//                             testing.allocator,
-//                             .{ .print = buffer.writer().any() },
-//                             &.{},
-//                         );
-
-//                         try testing.expectEqualStrings("5", buffer.items);
-//                     },
-//                     .string => {
-//                         var value = try parse(testing.allocator, tag, "string");
-//                         defer value.deinit(testing.allocator);
-
-//                         const print_params = try value.parseTransform("print");
-//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
-
-//                         var buffer = std.ArrayList(u8).init(testing.allocator);
-//                         defer buffer.deinit();
-//                         _ = try value.applyTransform(
-//                             testing.allocator,
-//                             .{ .print = buffer.writer().any() },
-//                             &.{},
-//                         );
-
-//                         try testing.expectEqualStrings("string", buffer.items);
-//                     },
-//                     .tuple => {
-//                         var value = try parse(testing.allocator, tag, "{10}");
-//                         defer value.deinit(testing.allocator);
-
-//                         const print_params = try value.parseTransform("print");
-//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
-
-//                         var buffer = std.ArrayList(u8).init(testing.allocator);
-//                         defer buffer.deinit();
-//                         _ = try value.applyTransform(
-//                             testing.allocator,
-//                             .{ .print = buffer.writer().any() },
-//                             &.{},
-//                         );
-
-//                         try testing.expectEqualStrings("", buffer.items);
-//                     },
-//                     .void => {
-//                         var value = try parse(testing.allocator, tag, "");
-//                         defer value.deinit(testing.allocator);
-
-//                         const print_params = try value.parseTransform("print");
-//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
-
-//                         var buffer = std.ArrayList(u8).init(testing.allocator);
-//                         defer buffer.deinit();
-//                         _ = try value.applyTransform(
-//                             testing.allocator,
-//                             .{ .print = buffer.writer().any() },
-//                             &.{},
-//                         );
-
-//                         try testing.expectEqualStrings("", buffer.items);
-//                     },
-//                 }
-//             },
-//         }
-//     }
-// }

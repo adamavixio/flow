@@ -8,16 +8,11 @@ const core = lib.core;
 const io = lib.io;
 const flow = lib.flow;
 
-pub const State = enum {
-    start,
-    identifier,
-    identifier_literal,
-    pipeline,
-    mutation,
-    transform,
-    parameters,
-    end,
-};
+const Parser = @This();
+
+token: flow.Token,
+lexer: *flow.Lexer,
+allocator: mem.Allocator,
 
 pub const Error = error{
     InvalidToken,
@@ -25,123 +20,110 @@ pub const Error = error{
     EmptyStack,
 } || mem.Allocator.Error;
 
-pub fn parse(allocator: mem.Allocator, source: io.Source) Error![]*flow.AST.Statement {
-    var lexer = flow.Lexer.init(source);
-    var token = lexer.next();
+pub fn init(allocator: mem.Allocator, lexer: *flow.Lexer) Parser {
+    return .{
+        .token = lexer.next(),
+        .lexer = lexer,
+        .allocator = allocator,
+    };
+}
 
-    var ast = std.ArrayList(*flow.AST.Statement).init(allocator);
-    var stack = std.ArrayList(*flow.AST.Statement).init(allocator);
+pub fn parse(self: *Parser) ![]*flow.AST.Statement {
+    var statements = std.ArrayList(*flow.AST.Statement).init(self.allocator);
+    while (self.token.tag != .end_of_frame) {
+        const statement = try self.parseStatement();
+        try statements.append(statement);
+    }
+    return statements.toOwnedSlice();
+}
 
-    state: switch (State.start) {
-        .start => switch (token.tag) {
-            .identifier => {
-                const statement = try allocator.create(flow.AST.Statement);
-                statement.* = .{ .expression = .{ .typed = .{
-                    .type = .{ .name = token },
-                    .value = undefined,
-                } } };
-                try stack.append(statement);
-                token = lexer.next();
-                continue :state .identifier;
-            },
-            .end_of_frame => return ast.toOwnedSlice(),
-            else => return Error.InvalidToken,
-        },
-        .identifier => switch (token.tag) {
-            .colon => {
-                token = lexer.next();
-                continue :state .identifier_literal;
-            },
-            else => return Error.InvalidToken,
-        },
-        .identifier_literal => switch (token.tag) {
-            .int, .float => {
-                const statement = stack.getLast();
-                statement.expression.typed.value = token;
-                token = lexer.next();
-                continue :state .pipeline;
-            },
-            else => return Error.InvalidToken,
-        },
-        .pipeline => switch (token.tag) {
-            .pipe => {
-                token = lexer.next();
-                continue :state .mutation;
-            },
-            .arrow => {
-                token = lexer.next();
-                continue :state .transform;
-            },
-            else => continue :state .end,
-        },
-        .mutation => switch (token.tag) {
-            .identifier => {
-                const statement = stack.getLast();
-                const expression = try allocator.create(flow.AST.Expression);
-                expression.* = statement.expression;
-                statement.expression = .{
-                    .mutation = .{
-                        .input = expression,
-                        .operation = token,
-                        .parameters = undefined,
-                    },
-                };
-                token = lexer.next();
-                continue :state .parameters;
-            },
-            else => return Error.InvalidToken,
-        },
-        .transform => switch (token.tag) {
-            .identifier => {
-                const statement = stack.getLast();
-                const expression = try allocator.create(flow.AST.Expression);
-                expression.* = statement.expression;
-                statement.expression = .{
-                    .transform = .{
-                        .input = expression,
-                        .operation = token,
-                        .parameters = undefined,
-                    },
-                };
-                token = lexer.next();
-                continue :state .parameters;
-            },
-            else => return Error.InvalidToken,
-        },
-        .parameters => {
-            var expressions = std.ArrayList(*flow.AST.Expression).init(allocator);
-            tag: switch (token.tag) {
-                .int, .float => {
-                    var expression = flow.AST.Expression{ .typed = .{
-                        .type = undefined,
-                        .value = token,
-                    } };
-                    try expressions.append(&expression);
-                    token = lexer.next();
-                    continue :tag token.tag;
-                },
-                else => {
-                    const statement = stack.getLast();
-                    switch (statement.expression) {
-                        .mutation => {
-                            statement.expression.mutation.parameters = try expressions.toOwnedSlice();
-                            continue :state .pipeline;
-                        },
-                        .transform => {
-                            statement.expression.transform.parameters = try expressions.toOwnedSlice();
-                            continue :state .pipeline;
-                        },
-                        else => return Error.InvalidStatement,
-                    }
-                },
+fn parseStatement(self: *Parser) !*flow.AST.Statement {
+    const expression = try self.parseExpression();
+    const statement = try self.allocator.create(flow.AST.Statement);
+    statement.* = .{ .expression = expression };
+    return statement;
+}
+
+fn parseExpression(self: *Parser) !*flow.AST.Expression {
+    var expression = try self.parseTypedExpression();
+    if (self.token.tag == .pipe or self.token.tag == .arrow)
+        expression = try self.parsePipelineExpression(expression);
+    return expression;
+}
+
+fn parseLiteralExpression(self: *Parser) !*flow.AST.Expression {
+    if (self.token.tag != .int and self.token.tag != .float)
+        return error.InvalidToken;
+
+    const literal = self.token;
+    self.advance();
+
+    const expression = try self.allocator.create(flow.AST.Expression);
+    expression.* = .{ .literal = .{ .token = literal } };
+    return expression;
+}
+
+fn parseTypedExpression(self: *Parser) !*flow.AST.Expression {
+    if (self.token.tag != .identifier)
+        return Error.InvalidToken;
+
+    const name = self.token;
+    self.advance();
+
+    if (self.token.tag != .colon)
+        return Error.InvalidToken;
+
+    self.advance();
+    const literal = try self.parseLiteralExpression();
+
+    const expression = try self.allocator.create(flow.AST.Expression);
+    expression.* = .{ .typed = .{ .name = name, .expression = literal } };
+    return expression;
+}
+
+fn parsePipelineExpression(self: *Parser, initial: *flow.AST.Expression) !*flow.AST.Expression {
+    var operations = std.ArrayList(flow.AST.Operation).init(self.allocator);
+    tag: switch (self.token.tag) {
+        .pipe => {
+            self.advance();
+            if (self.token.tag != .identifier) {
+                return Error.InvalidToken;
             }
+            const name = self.token;
+            self.advance();
+            var parameters = std.ArrayList(*flow.AST.Expression).init(self.allocator);
+            while (self.token.tag == .int or self.token.tag == .float) {
+                const parameter = try self.parseLiteralExpression();
+                try parameters.append(parameter);
+            }
+            try operations.append(.{ .mutation = .{ .name = name, .parameters = try parameters.toOwnedSlice() } });
+            continue :tag self.token.tag;
         },
-        .end => {
-            const statement = stack.pop() orelse return Error.EmptyStack;
-            try ast.append(statement);
-            continue :state .start;
+        .arrow => {
+            self.advance();
+            if (self.token.tag != .identifier) {
+                return Error.InvalidToken;
+            }
+            const name = self.token;
+            self.advance();
+            var parameters = std.ArrayList(*flow.AST.Expression).init(self.allocator);
+            while (self.token.tag == .int or self.token.tag == .float) {
+                const parameter = try self.parseLiteralExpression();
+                try parameters.append(parameter);
+            }
+            try operations.append(.{ .transform = .{ .name = name, .parameters = try parameters.toOwnedSlice() } });
+            continue :tag self.token.tag;
+        },
+        else => {
+            const expression = try self.allocator.create(flow.AST.Expression);
+            expression.* = .{ .pipeline = .{ .initial = initial, .operations = try operations.toOwnedSlice() } };
+            return expression;
         },
     }
+}
+
+pub fn advance(self: *Parser) void {
+    self.token = self.lexer.next();
 }
 
 test parse {
@@ -150,5 +132,8 @@ test parse {
 
     const input = "int : 5 | add 10 | sub 5 -> string | test -> print";
     const source = try io.Source.initString(arena.allocator(), input);
-    _ = try parse(arena.allocator(), source);
+
+    var lexer = flow.Lexer.init(source);
+    var parser = init(arena.allocator(), &lexer);
+    _ = try parser.parse();
 }
