@@ -13,6 +13,12 @@ pub const Interpreter = @This();
 
 source: io.Source,
 allocator: mem.Allocator,
+debug_enabled: bool = true,
+
+fn debug(self: Interpreter, comptime fmt: []const u8, args: anytype) void {
+    if (!self.debug_enabled) return;
+    std.debug.print("[DEBUG] " ++ fmt ++ "\n", args);
+}
 
 pub const Error = error{
     InvalidStatement,
@@ -40,7 +46,7 @@ pub fn execute(self: Interpreter, statements: []*flow.AST.Statement) !void {
 }
 
 pub fn evaluateExpression(self: Interpreter, expression: *flow.AST.Expression) !core.Value {
-    return switch (expression.*) {
+    const result = switch (expression.*) {
         .literal => |literal| switch (literal.token.tag) {
             .int => blk: {
                 const data = self.exchange(literal.token);
@@ -50,12 +56,14 @@ pub fn evaluateExpression(self: Interpreter, expression: *flow.AST.Expression) !
                 const data = self.exchange(literal.token);
                 break :blk try core.Value.parse(self.allocator, .float, data);
             },
-            else => return Error.InvalidExpression,
+            else => {
+                return Error.InvalidExpression;
+            },
         },
         .typed => |typed| {
             const tag = try core.Type.parse(self.exchange(typed.name));
             const value = try self.evaluateExpression(typed.expression);
-            if (tag != meta.activeTag(value)) {
+            if (tag == meta.activeTag(value)) {
                 return value;
             }
             const transform: core.Transform = switch (tag) {
@@ -68,8 +76,9 @@ pub fn evaluateExpression(self: Interpreter, expression: *flow.AST.Expression) !
             defer value.deinit(self.allocator);
             return value.applyTransform(self.allocator, transform, &.{});
         },
-        .pipeline => |pipeline| {
+        .pipeline => |pipeline| blk: {
             var value = try self.evaluateExpression(pipeline.initial);
+
             for (pipeline.operations) |operation| {
                 switch (operation) {
                     .mutation => |mutation_operation| {
@@ -107,9 +116,10 @@ pub fn evaluateExpression(self: Interpreter, expression: *flow.AST.Expression) !
                     },
                 }
             }
-            return value;
+            break :blk value;
         },
     };
+    return result;
 }
 
 pub fn exchange(self: Interpreter, token: flow.Token) []const u8 {
@@ -120,7 +130,7 @@ test execute {
     var arena = heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    const input = "float : 5 | sub 10 | sub 5 -> string -> print";
+    const input = "float : 5 | add 10 | sub 5 -> string -> print";
     const source = try io.Source.initString(arena.allocator(), input);
 
     var lexer = flow.Lexer.init(source);

@@ -221,14 +221,14 @@ pub const Value = union(Tag) {
             },
             .print => |writer| switch (self) {
                 inline .int, .uint, .float => |value| blk: {
-                    try writer.print("{d}", .{value.data});
+                    try writer.print("{d}\n", .{value.data});
                     break :blk init(.void, .{
                         .owned = false,
                         .data = {},
                     });
                 },
                 inline .string => |value| blk: {
-                    try writer.print("{s}", .{value.data});
+                    try writer.print("{s}\n", .{value.data});
                     break :blk init(.void, .{
                         .owned = false,
                         .data = {},
