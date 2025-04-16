@@ -1,40 +1,39 @@
 const std = @import("std");
 const heap = std.heap;
 const mem = std.mem;
+const meta = std.meta;
 
 const lib = @import("../root.zig");
 const core = lib.core;
 const flow = lib.flow;
 
-pub const AST = @This();
-statements: []Statement,
-
 pub const Statement = union(enum) {
-    pipeline: Pipeline,
+    expression: Expression,
+};
 
-    pub const Pipeline = struct {
-        type: ExpressionType,
-        transforms: []ExpressionTransform,
+pub const Expression = union(enum) {
+    typed: Typed,
+    mutation: Mutation,
+    transform: Transform,
+
+    pub const Typed = struct {
+        type: Type,
+        value: flow.Token,
+    };
+
+    pub const Mutation = struct {
+        input: *Expression,
+        operation: flow.Token,
+        parameters: []*Expression,
+    };
+
+    pub const Transform = struct {
+        input: *Expression,
+        operation: flow.Token,
+        parameters: []*Expression,
     };
 };
 
-pub const ExpressionType = struct {
-    name: []const u8,
-    parameter: ExpressionParameter,
-    operations: []ExpressionOperation,
-};
-
-pub const ExpressionTransform = struct {
-    name: []const u8,
-    parameters: []ExpressionParameter,
-    operations: []ExpressionOperation,
-};
-
-pub const ExpressionOperation = struct {
-    name: []const u8,
-    parameters: []ExpressionParameter,
-};
-
-pub const ExpressionParameter = union(enum) {
-    literal: []const u8,
+pub const Type = struct {
+    name: flow.Token,
 };

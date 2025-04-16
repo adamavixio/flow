@@ -7,420 +7,621 @@ const mem = std.mem;
 const meta = std.meta;
 const testing = std.testing;
 
-const lib = @import("../root.zig");
-const core = lib.core;
-
-pub const Tag = enum {
-    i8,
-    i16,
-    i32,
-    i64,
-    i128,
-    int,
-    u8,
-    u16,
-    u32,
-    u64,
-    u128,
-    uint,
-    f16,
-    f32,
-    f64,
-    f128,
-    float,
-    string,
-    void,
-
-    pub fn parse(literal: []const u8) !Tag {
-        if (meta.stringToEnum(Tag).parse(literal)) |tag|
-            return tag;
-        return core.Error.InvalidType;
-    }
+pub const Error = error{
+    ParseValueFailed,
+    ParseMutationFailed,
+    ParseTransformFailed,
+    InvalidMutation,
+    InvalidTransform,
+    TypeMismatch,
 };
 
-pub fn Base(comptime tag: Tag) type {
-    return switch (tag) {
-        .i8 => i8,
-        .i16 => i16,
-        .i32 => i32,
-        .i64 => i64,
-        .i128 => i128,
-        .int => isize,
-        .u8 => u8,
-        .u16 => u16,
-        .u32 => u32,
-        .u64 => u64,
-        .u128 => u128,
-        .uint => usize,
-        .f16 => f16,
-        .f32 => f32,
-        .f64 => f64,
-        .f128 => f128,
-        .float => f64,
-        .string => []const u8,
-        .void => void,
-    };
-}
-
-pub const Info = union(enum) {
-    int: Int,
-    float: Float,
-    string: String,
-    void: void,
-
-    pub const Int = struct {
-        signed: bool,
-    };
-
-    pub const Float = struct {};
-
-    pub const String = struct {};
-
-    pub fn init(tag: Tag) Info {
-        return switch (tag) {
-            .i8, .i16, .i32, .i64, .i128, .int => .{
-                .int = .{ .signed = true },
-            },
-            .u8, .u16, .u32, .u64, .u128, .uint => .{
-                .int = .{ .signed = false },
-            },
-            .f16, .f32, .f64, .f128, .float => .{
-                .float = .{},
-            },
-            .string => .{
-                .string = .{},
-            },
-            .void => .{ .void = {} },
-        };
-    }
+pub const Tag = enum {
+    int,
+    uint,
+    float,
+    string,
+    tuple,
+    void,
 };
 
 pub fn Build(comptime tag: Tag) type {
-    const T = Base(tag);
-    return switch (Info.init(tag)) {
-        .int => struct {
-            const Self = @This();
-            data: T,
-
-            pub fn parse(literal: []const u8) !Self {
-                return .{ .data = try fmt.parseInt(T, literal, 10) };
-            }
-
-            pub fn add(self: Self, other: Self) Self {
-                return .{ .data = self.data + other.data };
-            }
-
-            pub fn sub(self: Self, other: Self) Self {
-                return .{ .data = self.data - other.data };
-            }
-
-            pub fn mul(self: Self, other: Self) Self {
-                return .{ .data = self.data * other.data };
-            }
-
-            pub fn div(self: Self, other: Self) Self {
-                return .{ .data = @divTrunc(self.data, other.data) };
-            }
-
-            pub fn string(self: Self, allocator: mem.Allocator) !Build(.string) {
-                const buffer = try fmt.allocPrint(allocator, "{d}", .{self.data});
-                return Build(.string).initOwned(buffer);
-            }
-
-            pub fn print(self: Self, writer: io.AnyWriter) !void {
-                return try writer.print("{d}", .{self.data});
-            }
-
-            pub fn equal(self: Self, other: Self) bool {
-                return self.data == other.data;
-            }
-        },
-        .float => struct {
-            const Self = @This();
-            data: T,
-
-            pub fn parse(literal: []const u8) !Self {
-                return .{ .data = try fmt.parseFloat(T, literal) };
-            }
-
-            pub fn add(self: Self, other: Self) Self {
-                return .{ .data = self.data + other.data };
-            }
-
-            pub fn sub(self: Self, other: Self) Self {
-                return .{ .data = self.data - other.data };
-            }
-
-            pub fn mul(self: Self, other: Self) Self {
-                return .{ .data = self.data * other.data };
-            }
-
-            pub fn div(self: Self, other: Self) Self {
-                return .{ .data = @divTrunc(self.data, other.data) };
-            }
-
-            pub fn string(self: Self, allocator: mem.Allocator) !Build(.string) {
-                const buffer = try fmt.allocPrint(allocator, "{d}", .{self.data});
-                return Build(.string).initOwned(buffer);
-            }
-
-            pub fn print(self: Self, writer: io.AnyWriter) !void {
-                return try writer.print("{d}", .{self.data});
-            }
-
-            pub fn equal(self: Self, other: Self) !bool {
-                return self.data == other.data;
-            }
-        },
-        .string => struct {
-            const Self = @This();
-            data: T,
-            owned: bool,
-
-            pub fn parse(literal: []const u8) !Self {
-                return .{ .data = literal, .owned = false };
-            }
-
-            pub fn initOwned(literal: []const u8) !Self {
-                return .{ .data = literal, .owned = true };
-            }
-
-            pub fn deinit(self: Self, allocator: mem.Allocator) void {
-                if (self.owned) allocator.free(self.data);
-            }
-
-            pub fn print(self: Self, writer: io.AnyWriter) !void {
-                return try writer.print("{s}", .{self.data});
-            }
-
-            pub fn equal(self: Self, other: Self) bool {
-                return mem.eql(u8, self.data, other.data);
-            }
-        },
-        .void => struct {
-            const Self = @This();
-
-            pub fn parse(literal: []const u8) !Self {
-                _ = literal;
-                return .{};
-            }
-
-            pub fn print(_: Self, _: io.AnyWriter) !void {
-                return;
-            }
-        },
+    return switch (tag) {
+        .int => struct { owned: bool, data: isize },
+        .uint => struct { owned: bool, data: usize },
+        .float => struct { owned: bool, data: f64 },
+        .string => struct { owned: bool, data: []const u8 },
+        .tuple => struct { owned: bool, data: []Value },
+        .void => struct { owned: bool, data: void },
     };
 }
 
+pub const Mutation = enum {
+    add,
+    sub,
+    mul,
+    div,
+
+    pub fn parse(name: []const u8) !Mutation {
+        if (meta.stringToEnum(Mutation, name)) |mutation| return mutation;
+        return Error.ParseMutationFailed;
+    }
+};
+
+test Mutation {
+    const add = try Mutation.parse("add");
+    const sub = try Mutation.parse("sub");
+    const mul = try Mutation.parse("mul");
+    const div = try Mutation.parse("div");
+    try testing.expectEqual(.add, add);
+    try testing.expectEqual(.sub, sub);
+    try testing.expectEqual(.mul, mul);
+    try testing.expectEqual(.div, div);
+}
+
+pub const Transform = union(enum) {
+    string,
+    print: std.io.AnyWriter,
+
+    pub fn parse(name: []const u8) !meta.FieldEnum(Transform) {
+        if (meta.stringToEnum(meta.FieldEnum(Transform), name)) |transform| return transform;
+        return Error.ParseTransformFailed;
+    }
+};
+
+test Transform {
+    const string = try Transform.parse("string");
+    const print = try Transform.parse("print");
+    try testing.expectEqual(.string, string);
+    try testing.expectEqual(.print, print);
+}
+
 pub const Value = union(Tag) {
-    i8: Build(.i8),
-    i16: Build(.i16),
-    i32: Build(.i32),
-    i64: Build(.i64),
-    i128: Build(.i128),
     int: Build(.int),
-
-    u8: Build(.u8),
-    u16: Build(.u16),
-    u32: Build(.u32),
-    u64: Build(.u64),
-    u128: Build(.u128),
     uint: Build(.uint),
-
-    f16: Build(.f16),
-    f32: Build(.f32),
-    f64: Build(.f64),
-    f128: Build(.f128),
     float: Build(.float),
-
     string: Build(.string),
-
+    tuple: Build(.tuple),
     void: Build(.void),
 
-    pub fn init(tag: Tag, literal: []const u8) !Value {
+    pub fn init(comptime tag: Tag, data: meta.TagPayload(Value, tag)) Value {
+        return @unionInit(Value, @tagName(tag), data);
+    }
+
+    pub fn parse(allocator: mem.Allocator, tag: Tag, data: []const u8) !Value {
         return switch (tag) {
-            inline else => |t| @unionInit(Value, @tagName(t), try Build(t).parse(literal)),
+            .int => init(.int, .{ .owned = false, .data = try fmt.parseInt(isize, data, 10) }),
+            .uint => init(.uint, .{ .owned = false, .data = try fmt.parseInt(usize, data, 10) }),
+            .float => init(.float, .{ .owned = false, .data = try fmt.parseFloat(f64, data) }),
+            .string => init(.string, .{ .owned = true, .data = try allocator.dupe(u8, data) }),
+            .void => init(.void, .{ .owned = false, .data = {} }),
+            else => Error.ParseValueFailed,
         };
     }
 
     pub fn deinit(self: Value, allocator: mem.Allocator) void {
         switch (self) {
-            .string => |v| v.deinit(allocator),
+            .string => |string| if (string.owned) {
+                allocator.free(string.data);
+            },
+            .tuple => |tuple| if (tuple.owned) {
+                for (tuple.data) |value| {
+                    value.deinit(allocator);
+                }
+            },
             else => {},
         }
     }
 
-    pub const Operation = enum {
-        add,
-        sub,
-        mul,
-        div,
-    };
-
-    pub fn hasOperation(self: Value, operation: Operation) bool {
-        return switch (self) {
-            inline else => |v| switch (operation) {
-                inline else => |o| meta.hasMethod(@TypeOf(v), @tagName(o)),
+    pub fn typedMutation(self: Value, mutation: Mutation) ![]const Tag {
+        return switch (mutation) {
+            .add => switch (self) {
+                inline .int, .uint, .float => |_, tag| &.{tag},
+                else => Error.InvalidMutation,
+            },
+            .sub => switch (self) {
+                inline .int, .uint, .float => |_, tag| &.{tag},
+                else => Error.InvalidMutation,
+            },
+            .mul => switch (self) {
+                inline .int, .uint, .float => |_, tag| &.{tag},
+                else => Error.InvalidMutation,
+            },
+            .div => switch (self) {
+                inline .int, .uint, .float => |_, tag| &.{tag},
+                else => Error.InvalidMutation,
             },
         };
     }
 
-    pub fn applyOperation(self: Value, operation: Operation, other: Value) !Value {
-        switch (self) {
-            inline .i8, .i16, .i32, .i64, .i128, .int, .u8, .u16, .u32, .u64, .u128, .uint => |v, t| {
-                return @unionInit(Value, @tagName(t), switch (operation) {
-                    .add => v.add(@field(other, @tagName(t))),
-                    .sub => v.sub(@field(other, @tagName(t))),
-                    .mul => v.mul(@field(other, @tagName(t))),
-                    .div => v.div(@field(other, @tagName(t))),
-                });
+    pub fn applyMutation(self: *Value, mutation: Mutation, values: []Value) !void {
+        return switch (mutation) {
+            .add => switch (self.*) {
+                inline .int, .uint, .float => |*left, tag| left.data += try assert(tag, values[0]),
+                else => return Error.InvalidMutation,
             },
-            inline .f16, .f32, .f64, .f128, .float => |v, t| {
-                return @unionInit(Value, @tagName(t), switch (operation) {
-                    .add => v.add(@field(other, @tagName(t))),
-                    .sub => v.sub(@field(other, @tagName(t))),
-                    .mul => v.mul(@field(other, @tagName(t))),
-                    .div => v.div(@field(other, @tagName(t))),
-                });
+            .sub => switch (self.*) {
+                inline .int, .uint, .float => |*left, tag| left.data -= try assert(tag, values[0]),
+                else => return Error.InvalidMutation,
             },
-            inline .string, .void => return core.Error.InvalidOperation,
-        }
-    }
-
-    pub const Transform = union(enum) {
-        string,
-        print: io.AnyWriter,
-    };
-
-    pub fn hasTransform(self: Value, transform: meta.FieldEnum(Transform)) bool {
-        return switch (self) {
-            inline else => |v| switch (transform) {
-                inline else => |t| meta.hasMethod(@TypeOf(v), @tagName(t)),
+            .mul => switch (self.*) {
+                inline .int, .uint, .float => |*left, tag| left.data *= try assert(tag, values[0]),
+                else => return Error.InvalidMutation,
+            },
+            .div => switch (self.*) {
+                inline .int, .uint => |*left, tag| left.data = @divTrunc(left.data, try assert(tag, values[0])),
+                inline .float => |*left, tag| left.data /= try assert(tag, values[0]),
+                else => return Error.InvalidMutation,
             },
         };
     }
 
-    pub fn applyTransform(self: Value, allocator: mem.Allocator, transform: Transform) !Value {
-        switch (self) {
-            inline .i8, .i16, .i32, .i64, .i128, .int, .u8, .u16, .u32, .u64, .u128, .uint => |v| {
-                return switch (transform) {
-                    .string => @unionInit(Value, @tagName(.string), try v.string(allocator)),
-                    .print => |writer| blk: {
-                        try v.print(writer);
-                        break :blk @unionInit(Value, "void", .{});
-                    },
-                };
+    pub fn typedTransform(self: Value, transform: meta.FieldEnum(Transform)) ![]const Tag {
+        return switch (transform) {
+            .string => switch (self) {
+                inline .int, .uint, .float => &.{},
+                else => Error.InvalidTransform,
             },
-            inline .f16, .f32, .f64, .f128, .float => |v| {
-                return switch (transform) {
-                    .string => @unionInit(Value, @tagName(.string), try v.string(allocator)),
-                    .print => |writer| blk: {
-                        try v.print(writer);
-                        break :blk @unionInit(Value, "void", .{});
-                    },
-                };
-            },
-            inline .string => |v| {
-                return switch (transform) {
-                    .print => blk: {
-                        try v.print(std.io.getStdOut().writer().any());
-                        break :blk @unionInit(Value, "void", .{});
-                    },
-                    else => core.Error.InvalidTransform,
-                };
-            },
-            inline .void => return core.Error.InvalidTransform,
-        }
+            .print => &.{},
+        };
     }
 
-    pub const Comparison = enum {
-        equal,
-    };
-
-    pub fn hasComparison(self: Value, comparison: Comparison) bool {
-        return switch (self) {
-            inline else => |v| switch (comparison) {
-                inline else => |t| meta.hasMethod(@TypeOf(v), @tagName(t)),
+    pub fn applyTransform(self: Value, allocator: mem.Allocator, transform: Transform, _: []Value) !Value {
+        return switch (transform) {
+            .string => switch (self) {
+                inline .int, .uint, .float => |value| blk: {
+                    break :blk init(.string, .{
+                        .owned = true,
+                        .data = try fmt.allocPrint(allocator, "{d}", .{value.data}),
+                    });
+                },
+                else => return Error.InvalidTransform,
+            },
+            .print => |writer| switch (self) {
+                inline .int, .uint, .float => |value| blk: {
+                    try writer.print("{d}", .{value.data});
+                    break :blk init(.void, .{
+                        .owned = false,
+                        .data = {},
+                    });
+                },
+                inline .string => |value| blk: {
+                    try writer.print("{s}", .{value.data});
+                    break :blk init(.void, .{
+                        .owned = false,
+                        .data = {},
+                    });
+                },
+                else => return Error.InvalidTransform,
             },
         };
     }
 
-    pub fn applyComparison(self: Value, comparison: Comparison, other: Value) !bool {
-        switch (self) {
-            inline .i8, .i16, .i32, .i64, .i128, .int, .u8, .u16, .u32, .u64, .u128, .uint => |v, t| {
-                return switch (comparison) {
-                    .equal => v.equal(@field(other, @tagName(t))),
-                };
-            },
-            inline .f16, .f32, .f64, .f128, .float => |v, t| {
-                return switch (comparison) {
-                    .equal => v.equal(@field(other, @tagName(t))),
-                };
-            },
-            inline .string => |v, t| {
-                return switch (comparison) {
-                    .equal => v.equal(@field(other, @tagName(t))),
-                };
-            },
-            inline .void => return core.Error.InvalidTransform,
+    pub fn assert(comptime tag: Tag, value: Value) !switch (tag) {
+        .int => isize,
+        .uint => usize,
+        .float => f64,
+        .string => []const u8,
+        .tuple => []Value,
+        .void => void,
+    } {
+        if (tag != meta.activeTag(value)) {
+            return Error.TypeMismatch;
         }
+        return switch (tag) {
+            .int => value.int.data,
+            .uint => value.uint.data,
+            .float => value.float.data,
+            .string => value.string.data,
+            .tuple => value.tuple.data,
+            .void => value.void.data,
+        };
     }
 };
 
 test Value {
-    // Test Operations
-    @setEvalBranchQuota(10_000);
-    for (comptime meta.tags(Tag)) |tag| {
-        switch (Info.init(tag)) {
-            .int, .float => {
-                const value = try Value.init(tag, "10");
-                try testing.expect(value.hasOperation(.add));
-                try testing.expect(value.hasOperation(.sub));
-                try testing.expect(value.hasOperation(.mul));
-                try testing.expect(value.hasOperation(.div));
+    // Mutations
+    inline for (comptime meta.tags(Mutation)) |mutation| {
+        switch (mutation) {
+            .add => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int, .uint, .float => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
 
-                const operand = try Value.init(tag, "5");
-                const add_actual = try value.applyOperation(.add, operand);
-                const sub_actual = try value.applyOperation(.sub, operand);
-                const mul_actual = try value.applyOperation(.mul, operand);
-                const div_actual = try value.applyOperation(.div, operand);
-                const add_expected = try Value.init(tag, "15");
-                const sub_expected = try Value.init(tag, "5");
-                const mul_expected = try Value.init(tag, "50");
-                const div_expected = try Value.init(tag, "2");
-                try testing.expect(try add_expected.applyComparison(.equal, add_actual));
-                try testing.expect(try sub_expected.applyComparison(.equal, sub_actual));
-                try testing.expect(try mul_expected.applyComparison(.equal, mul_actual));
-                try testing.expect(try div_expected.applyComparison(.equal, div_actual));
+                        const add_types = try value.typedMutation(.add);
+                        try testing.expectEqualSlices(Tag, &.{tag}, add_types);
+
+                        var inputs = [_]Value{try Value.parse(testing.allocator, tag, "5")};
+                        defer inputs[0].deinit(testing.allocator);
+
+                        try value.applyMutation(.add, &inputs);
+                        try testing.expectEqual(Value.init(tag, .{ .owned = false, .data = 10 }), value);
+                    },
+                    else => {},
+                }
             },
-            .string => {},
-            .void => {},
+            .sub => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int, .uint, .float => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
+
+                        const sub_types = try value.typedMutation(.sub);
+                        try testing.expectEqualSlices(Tag, &.{tag}, sub_types);
+
+                        var inputs = [_]Value{try Value.parse(testing.allocator, tag, "5")};
+                        defer inputs[0].deinit(testing.allocator);
+
+                        try value.applyMutation(.sub, &inputs);
+                        try testing.expectEqual(Value.init(tag, .{ .owned = false, .data = 0 }), value);
+                    },
+                    else => {},
+                }
+            },
+            .mul => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int, .uint, .float => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
+
+                        const mul_types = try value.typedMutation(.sub);
+                        try testing.expectEqualSlices(Tag, &.{tag}, mul_types);
+
+                        var inputs = [_]Value{try Value.parse(testing.allocator, tag, "5")};
+                        defer inputs[0].deinit(testing.allocator);
+
+                        try value.applyMutation(.mul, &inputs);
+                        try testing.expectEqual(Value.init(tag, .{ .owned = false, .data = 25 }), value);
+                    },
+                    else => {},
+                }
+            },
+            .div => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int, .uint, .float => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
+
+                        const div_types = try value.typedMutation(.div);
+                        try testing.expectEqualSlices(Tag, &.{tag}, div_types);
+
+                        var inputs = [_]Value{try Value.parse(testing.allocator, tag, "5")};
+                        defer inputs[0].deinit(testing.allocator);
+
+                        try value.applyMutation(.div, &inputs);
+                        try testing.expectEqual(Value.init(tag, .{ .owned = false, .data = 1 }), value);
+                    },
+                    else => {},
+                }
+            },
         }
     }
 
-    // Test Transforms
-    @setEvalBranchQuota(10_000);
-    for (comptime meta.tags(Tag)) |tag| {
-        switch (Info.init(tag)) {
-            .int, .float => {
-                const value = try Value.init(tag, "10");
-                try testing.expect(value.hasTransform(.string));
-                try testing.expect(value.hasTransform(.print));
+    // Transforms
+    inline for (comptime meta.tags(meta.FieldEnum(Transform))) |transform| {
+        switch (transform) {
+            .string => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int, .uint, .float => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
 
-                const string_actual = try value.applyTransform(testing.allocator, .string);
-                defer string_actual.deinit(testing.allocator);
-                const string_expected = try Value.init(.string, "10");
-                defer string_expected.deinit(testing.allocator);
-                try testing.expect(try string_expected.applyComparison(.equal, string_actual));
+                        const string_types = try value.typedTransform(.string);
+                        try testing.expectEqualSlices(Tag, &.{}, string_types);
 
-                var buffer = std.ArrayList(u8).init(testing.allocator);
-                defer buffer.deinit();
-
-                _ = try value.applyTransform(testing.allocator, .{ .print = buffer.writer().any() });
-                try testing.expectEqualStrings("10", buffer.items);
+                        const string_value = try value.applyTransform(testing.allocator, .string, &.{});
+                        defer string_value.deinit(testing.allocator);
+                        try testing.expectEqualStrings("5", string_value.string.data);
+                    },
+                    else => {},
+                }
             },
-            .string => {},
-            .void => {},
+            .print => inline for (comptime meta.tags(Tag)) |tag| {
+                switch (tag) {
+                    .int, .uint, .float => {
+                        var value = try Value.parse(testing.allocator, tag, "5");
+                        defer value.deinit(testing.allocator);
+
+                        const print_types = try value.typedTransform(.print);
+                        try testing.expectEqualSlices(Tag, &.{}, print_types);
+                    },
+                    .string => {
+                        var value = try Value.parse(testing.allocator, tag, "test");
+                        defer value.deinit(testing.allocator);
+
+                        const print_types = try value.typedTransform(.print);
+                        try testing.expectEqualSlices(Tag, &.{}, print_types);
+                    },
+                    .void => {
+                        var value = try Value.parse(testing.allocator, tag, "");
+                        defer value.deinit(testing.allocator);
+
+                        const print_types = try value.typedTransform(.print);
+                        try testing.expectEqualSlices(Tag, &.{}, print_types);
+                    },
+                    else => {},
+                }
+            },
         }
     }
 }
+
+// pub const Mutation = enum {
+//     add,
+//     sub,
+//     mul,
+//     div,
+// };
+
+// pub fn parseMutation(self: Value, literal: []const u8) ![]const Tag {
+//     if (meta.stringToEnum(Mutation, literal)) |tag| {
+//         return switch (tag) {
+//             .add => switch (self.data) {
+//                 .int => &.{.int},
+//                 .uint => &.{.uint},
+//                 .float => &.{.float},
+//                 else => Error.InvalidMutation,
+//             },
+//             .sub => switch (self.data) {
+//                 .int => &.{.int},
+//                 .uint => &.{.uint},
+//                 .float => &.{.float},
+//                 else => Error.InvalidMutation,
+//             },
+//             .mul => switch (self.data) {
+//                 .int => &.{.int},
+//                 .uint => &.{.uint},
+//                 .float => &.{.float},
+//                 else => Error.InvalidMutation,
+//             },
+//             .div => switch (self.data) {
+//                 .int => &.{.int},
+//                 .uint => &.{.uint},
+//                 .float => &.{.float},
+//                 else => Error.InvalidMutation,
+//             },
+//         };
+//     }
+//     return Error.InvalidMutation;
+// }
+
+// pub fn applyMutation(
+//     self: *Value,
+//     mutation: Mutation,
+//     parameters: []Value,
+// ) !void {
+//     return switch (mutation) {
+//         .add => switch (self.data) {
+//             .int => self.data.int += parameters[0].data.int,
+//             .uint => self.data.uint += parameters[0].data.uint,
+//             .float => self.data.float += parameters[0].data.float,
+//             else => Error.InvalidMutation,
+//         },
+//         .sub => switch (self.data) {
+//             .int => self.data.int -= parameters[0].data.int,
+//             .uint => self.data.uint -= parameters[0].data.uint,
+//             .float => self.data.float -= parameters[0].data.float,
+//             else => Error.InvalidMutation,
+//         },
+//         .mul => switch (self.data) {
+//             .int => self.data.int *= parameters[0].data.int,
+//             .uint => self.data.uint *= parameters[0].data.uint,
+//             .float => self.data.float *= parameters[0].data.float,
+//             else => Error.InvalidMutation,
+//         },
+//         .div => switch (self.data) {
+//             .int => self.data.int = @divTrunc(self.data.int, parameters[0].data.int),
+//             .uint => self.data.uint = @divTrunc(self.data.uint, parameters[0].data.uint),
+//             .float => self.data.float /= parameters[0].data.float,
+//             else => Error.InvalidMutation,
+//         },
+//     };
+// }
+
+// pub const Transform = union(enum) {
+//     string,
+//     print: io.AnyWriter,
+// };
+
+// pub fn parseTransform(self: Value, literal: []const u8) ![]const Tag {
+//     if (meta.stringToEnum(meta.FieldEnum(Transform), literal)) |tag| {
+//         return switch (tag) {
+//             .string => switch (self.data) {
+//                 .int => &.{},
+//                 .uint => &.{},
+//                 .float => &.{},
+//                 else => Error.InvalidTransform,
+//             },
+//             .print => switch (self.data) {
+//                 .int => &.{},
+//                 .uint => &.{},
+//                 .float => &.{},
+//                 .string => &.{},
+//                 .tuple => &.{},
+//                 .void => &.{},
+//             },
+//         };
+//     }
+//     return Error.InvalidTransform;
+// }
+
+// pub fn applyTransform(
+//     self: Value,
+//     allocator: mem.Allocator,
+//     transform: Transform,
+//     _: []Value,
+// ) !Value {
+//     return switch (transform) {
+//         .string => switch (self.data) {
+//             .int => |v| .{
+//                 .owned = true,
+//                 .data = initData(.string, try fmt.allocPrint(allocator, "{d}", .{v})),
+//             },
+//             .uint => |v| .{
+//                 .owned = true,
+//                 .data = initData(.string, try fmt.allocPrint(allocator, "{d}", .{v})),
+//             },
+//             .float => |v| .{
+//                 .owned = true,
+//                 .data = initData(.string, try fmt.allocPrint(allocator, "{d}", .{v})),
+//             },
+//             else => Error.InvalidMutation,
+//         },
+//         .print => |w| switch (self.data) {
+//             .int => |v| blk: {
+//                 try w.print("{d}", .{v});
+//                 break :blk .{
+//                     .owned = false,
+//                     .data = initData(.void, {}),
+//                 };
+//             },
+//             .uint => |v| blk: {
+//                 try w.print("{d}", .{v});
+//                 break :blk .{
+//                     .owned = false,
+//                     .data = initData(.void, {}),
+//                 };
+//             },
+//             .float => |v| blk: {
+//                 try w.print("{d}", .{v});
+//                 break :blk .{
+//                     .owned = false,
+//                     .data = initData(.void, {}),
+//                 };
+//             },
+//             .string => |v| blk: {
+//                 try w.print("{s}", .{v});
+//                 break :blk .{
+//                     .owned = false,
+//                     .data = initData(.void, {}),
+//                 };
+//             },
+//             .tuple => .{
+//                 .owned = false,
+//                 .data = initData(.void, {}),
+//             },
+//             .void => .{
+//                 .owned = false,
+//                 .data = initData(.void, {}),
+//             },
+//         },
+//     };
+// }
+
+// pub const Comparison = enum {
+//     equal,
+// };
+
+// pub fn compare(self: Value, comparison: Comparison, other: Value) bool {
+//     return switch (comparison) {
+//         .equal => switch (self.data) {
+//             .int => self.data.int == other.data.int,
+//             .uint => self.data.uint == other.data.uint,
+//             .float => self.data.float == other.data.float,
+//             .string => mem.eql(u8, self.data.string, other.data.string),
+//             .tuple => false,
+//             .void => false,
+//         },
+//     };
+// }
+
+// test Transform {
+//     @setEvalBranchQuota(10_000);
+//     for (meta.tags(meta.FieldEnum(Transform))) |transform| {
+//         switch (transform) {
+//             .string => inline for (comptime meta.tags(Tag)) |tag| {
+//                 switch (tag) {
+//                     .int, .uint, .float => {
+//                         var value = try parse(testing.allocator, tag, "5");
+//                         defer value.deinit(testing.allocator);
+
+//                         const string_params = try value.parseTransform("string");
+//                         try testing.expectEqualSlices(Tag, &.{}, string_params);
+
+//                         const string = try value.applyTransform(testing.allocator, .string, &.{});
+//                         defer string.deinit(testing.allocator);
+
+//                         try testing.expect(string.compare(.equal, .{
+//                             .owned = false,
+//                             .data = initData(.string, "5"),
+//                         }));
+//                     },
+//                     else => {},
+//                 }
+//             },
+//             .print => inline for (comptime meta.tags(Tag)) |tag| {
+//                 switch (tag) {
+//                     .int, .uint, .float => {
+//                         var value = try parse(testing.allocator, tag, "5");
+//                         defer value.deinit(testing.allocator);
+
+//                         const print_params = try value.parseTransform("print");
+//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
+
+//                         var buffer = std.ArrayList(u8).init(testing.allocator);
+//                         defer buffer.deinit();
+//                         _ = try value.applyTransform(
+//                             testing.allocator,
+//                             .{ .print = buffer.writer().any() },
+//                             &.{},
+//                         );
+
+//                         try testing.expectEqualStrings("5", buffer.items);
+//                     },
+//                     .string => {
+//                         var value = try parse(testing.allocator, tag, "string");
+//                         defer value.deinit(testing.allocator);
+
+//                         const print_params = try value.parseTransform("print");
+//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
+
+//                         var buffer = std.ArrayList(u8).init(testing.allocator);
+//                         defer buffer.deinit();
+//                         _ = try value.applyTransform(
+//                             testing.allocator,
+//                             .{ .print = buffer.writer().any() },
+//                             &.{},
+//                         );
+
+//                         try testing.expectEqualStrings("string", buffer.items);
+//                     },
+//                     .tuple => {
+//                         var value = try parse(testing.allocator, tag, "{10}");
+//                         defer value.deinit(testing.allocator);
+
+//                         const print_params = try value.parseTransform("print");
+//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
+
+//                         var buffer = std.ArrayList(u8).init(testing.allocator);
+//                         defer buffer.deinit();
+//                         _ = try value.applyTransform(
+//                             testing.allocator,
+//                             .{ .print = buffer.writer().any() },
+//                             &.{},
+//                         );
+
+//                         try testing.expectEqualStrings("", buffer.items);
+//                     },
+//                     .void => {
+//                         var value = try parse(testing.allocator, tag, "");
+//                         defer value.deinit(testing.allocator);
+
+//                         const print_params = try value.parseTransform("print");
+//                         try testing.expectEqualSlices(Tag, &.{}, print_params);
+
+//                         var buffer = std.ArrayList(u8).init(testing.allocator);
+//                         defer buffer.deinit();
+//                         _ = try value.applyTransform(
+//                             testing.allocator,
+//                             .{ .print = buffer.writer().any() },
+//                             &.{},
+//                         );
+
+//                         try testing.expectEqualStrings("", buffer.items);
+//                     },
+//                 }
+//             },
+//         }
+//     }
+// }

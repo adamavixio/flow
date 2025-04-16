@@ -1,129 +1,121 @@
 const std = @import("std");
-const testing = std.testing;
-const Allocator = std.mem.Allocator;
-const ArenaAllocator = std.heap.ArenaAllocator;
-const ArrayList = std.ArrayList;
-const StringHashMap = std.StringHashMap;
+const fmt = std.fmt;
+const mem = std.mem;
 
-const root = @import("root.zig");
-const AST = root.AST;
-const Core = root.Core;
-const Lexer = root.Lexer;
-const Parser = root.Parser;
-const Source = root.Source;
+const lib = @import("../root.zig");
+const core = lib.core;
+const flow = lib.flow;
+const io = lib.io;
 
 const Analyzer = @This();
+types: std.AutoHashMap(flow.AST.Expression, core.Type),
+values: std.AutoHashMap(flow.AST.Expression, core.Type.Value),
+errors: std.ArrayList(Diagnostic),
+source: io.Source,
+allocator: mem.Allocator,
+
+pub const Diagnostic = struct {
+    type: Error,
+    token: flow.Token,
+};
 
 pub const Error = error{
-    ExpectedInputStage,
-    InvalidTypeDeclaration,
-    ExpectedIdentifierExpression,
-    ExpectedLiteralExpression,
-} || Allocator.Error;
+    InvalidType,
+    InvalidValueInt,
+    InvalidValueFloat,
+    InvalidOperation,
+    InvalidExpressionPipeline,
+};
 
-ast: *AST,
-
-pub fn init(ast: *AST) Analyzer {
-    return .{ .ast = ast };
+pub fn init(allocator: mem.Allocator, source: io.Source) Analyzer {
+    return .{
+        .types = std.AutoHashMap(flow.AST.Expression, core.Type.Tag).init(allocator),
+        .values = std.AutoHashMap(flow.AST.Expression, core.Type.Value).init(allocator),
+        .errors = std.ArrayList(Diagnostic).init(allocator),
+        .source = source,
+        .allocator = allocator,
+    };
 }
 
-pub fn run(self: Analyzer) !void {
-    for (self.ast.pipelines.items) |pipeline| {
-        for (pipeline.stages.items) |stage| {
-            const info = Core.runtime_infos.get(stage.input.declaration.type.name.identifier.name).?;
-            @compileLog(info);
-        }
+pub fn run(self: Analyzer, ast: flow.AST) void {
+    for (ast.statements) |statement| switch (statement) {
+        .expression => |expression| try self.runPipeline(expression),
+    };
+}
+
+pub fn runPipeline(self: Analyzer, expression: flow.AST.Expression) !void {
+    switch (expression) {
+        .pipeline => |pipeline| {
+            const tag = if (self.tryType(pipeline.type)) |tag| blk: {
+                try self.types.put(expression, tag);
+                break :blk tag;
+            } else |err| return switch (err) {
+                core.Type.Error.TypeNotFound => try self.errors.append(.{
+                    .type = .InvalidType,
+                    .token = pipeline.type,
+                }),
+                else => err,
+            };
+
+            if (self.tryValue(tag, pipeline.value)) |value| {
+                try self.values.put(expression, value);
+            } else |err| return switch (err) {
+                fmt.ParseIntError => try self.errors.append(.{
+                    .type = .InvalidValueInt,
+                    .token = pipeline.value,
+                }),
+                fmt.ParseFloatError => try self.errors.append(.{
+                    .type = .InvalidValueFloat,
+                    .token = pipeline.value,
+                }),
+                else => err,
+            };
+
+            for (pipeline.operations) |operation| {
+                try self.runOperation(operation);
+            }
+        },
+        else => Error.InvalidExpressionPipeline,
     }
 }
 
-// pub fn analyzePipeline(self: Analyzer, pipeline: *AST.Pipeline) !void {
-//     for (pipeline.stages.items) |stage| {
-//         const result = switch (stage) {
-//             .input => previous = try self.analyzeInputStage(stage),
-//             // .transform => try analyzeTransformStage(stage, identifier),
-//         };
-//     }
-// }
+pub fn runOperation(self: Analyzer, expression: flow.AST.Expression) !void {
+    switch (expression) {
+        .pipeline => |pipeline| {
+            const tag = if (self.tryType(pipeline.type)) |tag| blk: {
+                try self.types.put(expression, tag);
+                break :blk tag;
+            } else {
+                return try self.errors.append(.{
+                    .type = .InvalidType,
+                    .token = pipeline.type,
+                });
+            };
 
-// pub fn analyzeInputStage(self: Analyzer, stage: *AST.Stage) !*AST.Stage {
-//     switch (stage.*) {
-//         .input => |input| {
-//             const decl = try self.analyzeTypeDeclaration(input.declaration);
-//             const info = try Core.InfoFrom(decl.type.name.identifier.name);
-//             for (input.expressions.items) |expression| {
-//                 switch (expression) {
-//                     .identifier => try info.hasMethod(expression.identifier.name),
-//                     else => return Error.ExpectedIdentifierExpression,
-//                 }
-//             }
-//             return input;
-//         },
-//         else => return Error.ExpectedInputStage,
-//     }
-// }
+            if (self.tryValue(tag, pipeline.value)) |value| {
+                try self.values.put(expression, value);
+            } else {
+                return try self.errors.append(.{
+                    .type = .InvalidValue,
+                    .token = pipeline.value,
+                });
+            }
 
-// pub fn analyzeTransformStage(self: Analyzer, stage: *AST.Stage, previous: *AST.Stage) !*AST.Stage {
-//     switch (stage.*) {
-//         .transform => |transform| {
-//             for (transform.expressions.items) |expression| {
-//                 switch (expression) {
-//                     .identifier => try Registry.hasMethod(
-//                         declaration.name.identifier.name,
-//                         expression.identifier.name,
-//                     ),
-//                     else => return Error.ExpectedIdentifierExpression,
-//                 }
-//             }
-//         },
-//         else => return Error.ExpectedInputStage,
-//     }
-// }
+            for (pipeline.operations) |operation| {}
+        },
+    }
+}
 
-// pub fn analyzeTypeDeclaration(self: Analyzer, declaration: *AST.Declaration) Error!*AST.Declaration {
-//     switch (declaration.*) {
-//         .type => |@"type"| {
-//             const type_name = try self.analyzeIdentifierExpression(@"type".name);
-//             const type_value = try self.analyzeLiteralExpression(@"type".value);
-//             const info = try Core.InfoFrom(type_name.identifier.name);
-//             try info.isValidLiteral(type_value);
-//             return declaration;
-//         },
-//     }
-// }
+pub fn tryType(self: Analyzer, token: flow.Token) !core.Type.Tag {
+    const content = self.exchange(token);
+    return core.Type.Tag.parse(content);
+}
 
-// pub fn analyzeIdentifierExpression(expression: *AST.Expression) Error!*AST.Expression {
-//     return switch (expression.*) {
-//         .identifier => return expression,
-//         else => return Error.ExpectedIdentifierExpression,
-//     };
-// }
+pub fn tryValue(self: Analyzer, tag: core.Type.Tag, token: flow.Token) !core.Type.Tag {
+    const content = self.exchange(token);
+    return core.Type.Value.init(self.allocator, tag, content);
+}
 
-// pub fn analyzeLiteralExpression(expression: *AST.Expression) Error!*AST.Expression {
-//     return switch (expression.*) {
-//         .literal => return expression,
-//         else => return Error.ExpectedIdentifierExpression,
-//     };
-// }
-
-test "parser" {
-    const allocator = testing.allocator;
-
-    const input =
-        \\ int : 5 | add 5 | sub 5 -> string | upper -> print
-        \\ int : 5 | add 5 | sub 5 -> string | upper -> print
-    ;
-    var source = try Source.initString(allocator, input);
-    defer source.deinit();
-
-    var lexer = Lexer.init(source);
-    const tokens = try lexer.Tokenize(allocator);
-    defer tokens.deinit();
-
-    var arena = ArenaAllocator.init(allocator);
-    var parser = Parser.init(&arena, source, tokens);
-    const ast = try parser.parse();
-    defer ast.deinit();
-
-    const analyzer = init(ast);
-    try analyzer.run();
+pub fn exchange(self: Analyzer, token: flow.Token) []const u8 {
+    return self.source.buffer[token.start..token.end];
 }
