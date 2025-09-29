@@ -10,36 +10,34 @@ pub fn build(builder: *std.Build) void {
 
     const core_module = builder.createModule(.{
         .root_source_file = builder.path("src/core/root.zig"),
-        .target = target,
-        .optimize = optimize,
     });
 
     const flow_module = builder.createModule(.{
         .root_source_file = builder.path("src/flow/root.zig"),
-        .target = target,
-        .optimize = optimize,
     });
 
     const io_module = builder.createModule(.{
         .root_source_file = builder.path("src/io/root.zig"),
-        .target = target,
-        .optimize = optimize,
     });
 
     //
     // Executables
     //
 
-    const flow_executable = builder.addExecutable(.{
-        .name = "flow",
+    const main_module = builder.createModule(.{
         .root_source_file = builder.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    flow_executable.root_module.addImport("core", core_module);
-    flow_executable.root_module.addImport("flow", flow_module);
-    flow_executable.root_module.addImport("io", io_module);
+    main_module.addImport("core", core_module);
+    main_module.addImport("flow", flow_module);
+    main_module.addImport("io", io_module);
+
+    const flow_executable = builder.addExecutable(.{
+        .name = "flow",
+        .root_module = main_module,
+    });
 
     builder.installArtifact(flow_executable);
 
@@ -47,13 +45,17 @@ pub fn build(builder: *std.Build) void {
     // Tests
     //
 
-    const flow_test = builder.addTest(.{
+    const test_module = builder.createModule(.{
         .root_source_file = builder.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    flow_test.root_module.addImport("flow", flow_module);
+    test_module.addImport("flow", flow_module);
+
+    const flow_test = builder.addTest(.{
+        .root_module = test_module,
+    });
 
     //
     // Command (flow)

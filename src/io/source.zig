@@ -12,7 +12,10 @@ pub fn initFile(allocator: mem.Allocator, path: []const u8) !Source {
     const file = try fs.cwd().openFile(path, .{});
     defer file.close();
 
-    const buffer = try file.readToEndAllocOptions(allocator, math.maxInt(usize), null, @alignOf(u8), 0);
+    // Read directly to a null-terminated buffer
+    const file_size = try file.getEndPos();
+    const buffer = try allocator.allocSentinel(u8, file_size, 0);
+    _ = try file.read(buffer);
     return .{ .buffer = buffer };
 }
 

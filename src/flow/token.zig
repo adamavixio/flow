@@ -10,6 +10,7 @@ pub const Tag = enum {
     // Literal
     int,
     float,
+    string,
     // Operator
     plus,
     minus,

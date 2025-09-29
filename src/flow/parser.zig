@@ -29,12 +29,12 @@ pub fn init(allocator: mem.Allocator, lexer: *flow.Lexer) Parser {
 }
 
 pub fn parse(self: *Parser) ![]*flow.AST.Statement {
-    var statements = std.ArrayList(*flow.AST.Statement).init(self.allocator);
+    var statements = std.ArrayList(*flow.AST.Statement).empty;
     while (self.token.tag != .end_of_frame) {
         const statement = try self.parseStatement();
-        try statements.append(statement);
+        try statements.append(self.allocator, statement);
     }
-    return statements.toOwnedSlice();
+    return statements.toOwnedSlice(self.allocator);
 }
 
 fn parseStatement(self: *Parser) !*flow.AST.Statement {
@@ -52,7 +52,7 @@ fn parseExpression(self: *Parser) !*flow.AST.Expression {
 }
 
 fn parseLiteralExpression(self: *Parser) !*flow.AST.Expression {
-    if (self.token.tag != .int and self.token.tag != .float)
+    if (self.token.tag != .int and self.token.tag != .float and self.token.tag != .string)
         return error.InvalidToken;
 
     const literal = self.token;
@@ -64,6 +64,12 @@ fn parseLiteralExpression(self: *Parser) !*flow.AST.Expression {
 }
 
 fn parseTypedExpression(self: *Parser) !*flow.AST.Expression {
+    // First check if it's a simple literal expression
+    if (self.token.tag == .int or self.token.tag == .float or self.token.tag == .string) {
+        return self.parseLiteralExpression();
+    }
+
+    // Otherwise, it should be a typed expression (e.g., "int : 5")
     if (self.token.tag != .identifier)
         return Error.InvalidToken;
 
@@ -82,7 +88,7 @@ fn parseTypedExpression(self: *Parser) !*flow.AST.Expression {
 }
 
 fn parsePipelineExpression(self: *Parser, initial: *flow.AST.Expression) !*flow.AST.Expression {
-    var operations = std.ArrayList(flow.AST.Operation).init(self.allocator);
+    var operations = std.ArrayList(flow.AST.Operation).empty;
     tag: switch (self.token.tag) {
         .pipe => {
             self.advance();
@@ -91,12 +97,12 @@ fn parsePipelineExpression(self: *Parser, initial: *flow.AST.Expression) !*flow.
             }
             const name = self.token;
             self.advance();
-            var parameters = std.ArrayList(*flow.AST.Expression).init(self.allocator);
-            while (self.token.tag == .int or self.token.tag == .float) {
+            var parameters = std.ArrayList(*flow.AST.Expression).empty;
+            while (self.token.tag == .int or self.token.tag == .float or self.token.tag == .string) {
                 const parameter = try self.parseLiteralExpression();
-                try parameters.append(parameter);
+                try parameters.append(self.allocator, parameter);
             }
-            try operations.append(.{ .mutation = .{ .name = name, .parameters = try parameters.toOwnedSlice() } });
+            try operations.append(self.allocator, .{ .mutation = .{ .name = name, .parameters = try parameters.toOwnedSlice(self.allocator) } });
             continue :tag self.token.tag;
         },
         .arrow => {
@@ -106,17 +112,17 @@ fn parsePipelineExpression(self: *Parser, initial: *flow.AST.Expression) !*flow.
             }
             const name = self.token;
             self.advance();
-            var parameters = std.ArrayList(*flow.AST.Expression).init(self.allocator);
-            while (self.token.tag == .int or self.token.tag == .float) {
+            var parameters = std.ArrayList(*flow.AST.Expression).empty;
+            while (self.token.tag == .int or self.token.tag == .float or self.token.tag == .string) {
                 const parameter = try self.parseLiteralExpression();
-                try parameters.append(parameter);
+                try parameters.append(self.allocator, parameter);
             }
-            try operations.append(.{ .transform = .{ .name = name, .parameters = try parameters.toOwnedSlice() } });
+            try operations.append(self.allocator, .{ .transform = .{ .name = name, .parameters = try parameters.toOwnedSlice(self.allocator) } });
             continue :tag self.token.tag;
         },
         else => {
             const expression = try self.allocator.create(flow.AST.Expression);
-            expression.* = .{ .pipeline = .{ .initial = initial, .operations = try operations.toOwnedSlice() } };
+            expression.* = .{ .pipeline = .{ .initial = initial, .operations = try operations.toOwnedSlice(self.allocator) } };
             return expression;
         },
     }

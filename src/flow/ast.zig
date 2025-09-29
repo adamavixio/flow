@@ -34,7 +34,7 @@ pub const Expression = union(enum) {
     pipeline: Pipeline,
 
     pub const Literal = struct {
-        value: flow.Token,
+        token: flow.Token,
     };
 
     pub const Typed = struct {

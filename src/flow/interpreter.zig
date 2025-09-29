@@ -41,6 +41,9 @@ pub fn execute(self: Interpreter, statements: []*flow.AST.Statement) !void {
                 const value = try self.evaluateExpression(expression);
                 defer value.deinit(self.allocator);
             },
+            .declaration => |_| {
+                // TODO: Handle declarations
+            },
         }
     }
 }
@@ -55,6 +58,15 @@ pub fn evaluateExpression(self: Interpreter, expression: *flow.AST.Expression) !
             .float => blk: {
                 const data = self.exchange(literal.token);
                 break :blk try core.Value.parse(self.allocator, .float, data);
+            },
+            .string => blk: {
+                const data = self.exchange(literal.token);
+                // Remove quotes from string literal
+                const trimmed = if (data.len >= 2 and data[0] == '"' and data[data.len - 1] == '"')
+                    data[1 .. data.len - 1]
+                else
+                    data;
+                break :blk try core.Value.parse(self.allocator, .string, trimmed);
             },
             else => {
                 return Error.InvalidExpression;
@@ -82,37 +94,51 @@ pub fn evaluateExpression(self: Interpreter, expression: *flow.AST.Expression) !
             for (pipeline.operations) |operation| {
                 switch (operation) {
                     .mutation => |mutation_operation| {
-                        var parameter_values = std.ArrayList(core.Value).init(self.allocator);
+                        var parameter_values = std.ArrayList(core.Value).empty;
                         for (mutation_operation.parameters) |parameter_expression| {
                             const parameter_value = try self.evaluateExpression(parameter_expression);
-                            try parameter_values.append(parameter_value);
+                            try parameter_values.append(self.allocator, parameter_value);
                         }
-                        const values = try parameter_values.toOwnedSlice();
+                        const values = try parameter_values.toOwnedSlice(self.allocator);
                         defer self.allocator.free(values);
                         const name = self.exchange(mutation_operation.name);
                         const mutation_tag = try core.Mutation.parse(name);
                         try value.applyMutation(mutation_tag, values);
                     },
                     .transform => |transform_operation| {
-                        var parameters = std.ArrayList(core.Value).init(self.allocator);
+                        var parameters = std.ArrayList(core.Value).empty;
                         for (transform_operation.parameters) |parameter_expression| {
                             const parameter_value = try self.evaluateExpression(parameter_expression);
-                            try parameters.append(parameter_value);
+                            try parameters.append(self.allocator, parameter_value);
                         }
-                        const values = try parameters.toOwnedSlice();
+                        const values = try parameters.toOwnedSlice(self.allocator);
                         defer self.allocator.free(values);
                         const name = self.exchange(transform_operation.name);
                         const transform_tag = try core.Transform.parse(name);
-                        const transform_coercion: core.Transform = switch (transform_tag) {
-                            .int => .int,
-                            .uint => .uint,
-                            .float => .float,
-                            .string => .string,
-                            .print => .{ .print = std.io.getStdErr().writer().any() },
-                        };
-                        const old = value;
-                        defer old.deinit(self.allocator);
-                        value = try value.applyTransform(self.allocator, transform_coercion, &.{});
+                        if (transform_tag == .print) {
+                            // Handle print specially - just output and return void
+                            switch (value) {
+                                .int => |v| std.debug.print("{d}\n", .{v.data}),
+                                .uint => |v| std.debug.print("{d}\n", .{v.data}),
+                                .float => |v| std.debug.print("{d}\n", .{v.data}),
+                                .string => |v| std.debug.print("{s}\n", .{v.data}),
+                                else => {},
+                            }
+                            const old = value;
+                            defer old.deinit(self.allocator);
+                            value = core.Value.init(.void, .{ .owned = false, .data = {} });
+                        } else {
+                            const transform_coercion: core.Transform = switch (transform_tag) {
+                                .int => .int,
+                                .uint => .uint,
+                                .float => .float,
+                                .string => .string,
+                                else => return Error.InvalidExpression,
+                            };
+                            const old = value;
+                            defer old.deinit(self.allocator);
+                            value = try value.applyTransform(self.allocator, transform_coercion, &.{});
+                        }
                     },
                 }
             }

@@ -1,0 +1,3 @@
+int : 10 | add 5 | mul 2 -> print
+float : 10.5 | add 0.5 -> print
+string : "Processing" -> print

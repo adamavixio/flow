@@ -38,8 +38,5 @@ pub fn main() !void {
     };
 
     const interpreter = flow.Interpreter.init(allocator, source);
-    interpreter.execute(statements) catch |err| {
-        std.debug.print("Execution error: {s}\n", .{@errorName(err)});
-        return;
-    };
+    try interpreter.execute(statements);
 }

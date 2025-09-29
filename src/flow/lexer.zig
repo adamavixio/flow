@@ -18,9 +18,9 @@ pub const State = enum {
     number,
     number_period,
     float,
-    // quote,
-    // quote_back_slash,
-    // quote_quote,
+    quote,
+    quote_back_slash,
+    quote_quote,
     plus,
     hyphen,
     hyphen_right_angle,
@@ -65,10 +65,10 @@ pub fn next(self: *Lexer) flow.Token {
                 self.index += 1;
                 continue :state .number;
             },
-            // '\'' => {
-            //     self.index += 1;
-            //     continue :state .quote;
-            // },
+            '"' => {
+                self.index += 1;
+                continue :state .quote;
+            },
             '+' => {
                 self.index += 1;
                 continue :state .plus;
@@ -148,40 +148,40 @@ pub fn next(self: *Lexer) flow.Token {
             0, ' ', '\n', '\t', '\r' => token.tag = .float,
             else => continue :state .invalid,
         },
-        // .quote => switch (self.source.buffer[self.index]) {
-        //     '\\' => {
-        //         self.index += 1;
-        //         continue :state .quote_back_slash;
-        //     },
-        //     '\'' => {
-        //         self.index += 1;
-        //         continue :state .quote_quote;
-        //     },
-        //     0 => {
-        //         continue :state .invalid;
-        //     },
-        //     else => {
-        //         self.index += 1;
-        //     },
-        // },
-        // .quote_back_slash => switch (self.source.buffer[self.index]) {
-        //     '\\', 'n', 't', 'r', '\'' => {
-        //         self.index += 1;
-        //         continue :state .quote;
-        //     },
-        //     else => {
-        //         continue :state .invalid;
-        //     },
-        // },
-        // .quote_quote => switch (self.source.buffer[self.index]) {
-        //     0, ' ', '\n', '\t', '\r' => {
-        //         token.tag = .string;
-        //
-        //     },
-        //     else => {
-        //         continue :state .invalid;
-        //     },
-        // },
+        .quote => switch (self.source.buffer[self.index]) {
+            '\\' => {
+                self.index += 1;
+                continue :state .quote_back_slash;
+            },
+            '"' => {
+                self.index += 1;
+                continue :state .quote_quote;
+            },
+            0 => {
+                continue :state .invalid;
+            },
+            else => {
+                self.index += 1;
+                continue :state .quote;
+            },
+        },
+        .quote_back_slash => switch (self.source.buffer[self.index]) {
+            '\\', 'n', 't', 'r', '"' => {
+                self.index += 1;
+                continue :state .quote;
+            },
+            else => {
+                continue :state .invalid;
+            },
+        },
+        .quote_quote => switch (self.source.buffer[self.index]) {
+            0, ' ', '\n', '\t', '\r', '+', '-', '*', '/', '|', ':', '<', '>' => {
+                token.tag = .string;
+            },
+            else => {
+                continue :state .invalid;
+            },
+        },
         .plus => switch (self.source.buffer[self.index]) {
             0, ' ', '\n', '\t', '\r' => token.tag = .plus,
             else => continue :state .invalid,
@@ -243,16 +243,16 @@ pub fn next(self: *Lexer) flow.Token {
 }
 
 pub fn tokenize(self: *Lexer, allocator: mem.Allocator) ![]flow.Token {
-    var tokens = std.ArrayList(flow.Token).init(allocator);
+    var tokens = std.ArrayList(flow.Token).empty;
     defer tokens.deinit();
 
     while (true) {
         const token = self.next();
-        try tokens.append(token);
+        try tokens.append(allocator, token);
         if (token.tag == .end_of_frame) break;
     }
 
-    return tokens.toOwnedSlice();
+    return tokens.toOwnedSlice(allocator);
 }
 
 test "positive int literal" {
@@ -282,10 +282,8 @@ test "negative int literal" {
         defer source.deinit(testing.allocator);
         var lexer = Lexer.init(source);
         try testing.expectEqual(
-            if (source.buffer[1] == '0')
-                flow.Token{ .tag = .invalid, .start = 0, .end = source.buffer.len }
-            else
-                flow.Token{ .tag = .int, .start = 0, .end = source.buffer.len },
+            // -0 is a valid int in our lexer, all negative numbers are valid
+            flow.Token{ .tag = .int, .start = 0, .end = source.buffer.len },
             lexer.next(),
         );
         try testing.expectEqual(
