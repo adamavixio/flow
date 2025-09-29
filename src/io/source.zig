@@ -16,7 +16,7 @@ pub fn initFile(allocator: mem.Allocator, path: []const u8) !Source {
     return .{ .buffer = buffer };
 }
 
-test "initFile" {
+test initFile {
     var tmp_dir = testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 

@@ -8,7 +8,24 @@ const core = lib.core;
 const flow = lib.flow;
 
 pub const Statement = union(enum) {
+    declaration: *Declaration,
     expression: *Expression,
+};
+
+pub const Declaration = union(enum) {
+    type: Type,
+    pipeline: Pipeline,
+
+    pub const Type = struct {
+        name: flow.Token,
+    };
+
+    pub const Pipeline = struct {
+        name: flow.Token,
+        input: Type,
+        output: core.Type,
+        block: Expression.Pipeline,
+    };
 };
 
 pub const Expression = union(enum) {
@@ -17,7 +34,7 @@ pub const Expression = union(enum) {
     pipeline: Pipeline,
 
     pub const Literal = struct {
-        token: flow.Token,
+        value: flow.Token,
     };
 
     pub const Typed = struct {

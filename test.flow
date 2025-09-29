@@ -1,3 +1,9 @@
-int : 10 | add 5 -> string -> print 
-int : 10 | add 5 -> string -> print 
-float : 10 | add 5 -> string -> print 
+int : 10 + 5 * 10 / 2 -> print 
+file : "path.test" -> content -> print 
+
+test => int : 10 <> 5 | add 5 -> string -> print
+
+dir : "path" -> files .. 
+
+
+-> content | replace "target" "replaced" 

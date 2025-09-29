@@ -130,7 +130,7 @@ test execute {
     var arena = heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
-    const input = "float : 5 | add 10 | sub 5 -> string -> print";
+    const input = "int : 5 | add 10 | sub 5 -> print";
     const source = try io.Source.initString(arena.allocator(), input);
 
     var lexer = flow.Lexer.init(source);

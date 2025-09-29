@@ -191,6 +191,10 @@ pub fn next(self: *Lexer) flow.Token {
                 self.index += 1;
                 continue :state .hyphen_right_angle;
             },
+            '0'...'9' => {
+                self.index += 1;
+                continue :state .number;
+            },
             0, ' ', '\n', '\t', '\r' => token.tag = .minus,
             else => continue :state .invalid,
         },
@@ -251,33 +255,17 @@ pub fn tokenize(self: *Lexer, allocator: mem.Allocator) ![]flow.Token {
     return tokens.toOwnedSlice();
 }
 
-test "identifiers" {
-    const allocator = testing.allocator;
-
-    // base
-    {
-        var source = try io.Source.initString(allocator, "abc123zyz");
+test "positive int literal" {
+    const numbers = "0123456789";
+    inline for (0..numbers.len) |i| {
+        var source = try io.Source.initString(testing.allocator, numbers[i..] ++ numbers[0..i]);
         defer source.deinit(testing.allocator);
-
         var lexer = Lexer.init(source);
         try testing.expectEqual(
-            flow.Token{ .tag = .identifier, .start = 0, .end = source.buffer.len },
-            lexer.next(),
-        );
-        try testing.expectEqual(
-            flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-            lexer.next(),
-        );
-    }
-
-    // whitespace
-    {
-        var source = try io.Source.initString(allocator, " abc123zyz ");
-        defer source.deinit(testing.allocator);
-
-        var lexer = Lexer.init(source);
-        try testing.expectEqual(
-            flow.Token{ .tag = .identifier, .start = 1, .end = source.buffer.len - 1 },
+            if (source.buffer[0] == '0')
+                flow.Token{ .tag = .invalid, .start = 0, .end = source.buffer.len }
+            else
+                flow.Token{ .tag = .int, .start = 0, .end = source.buffer.len },
             lexer.next(),
         );
         try testing.expectEqual(
@@ -287,181 +275,52 @@ test "identifiers" {
     }
 }
 
-test "literals" {
-    const allocator = testing.allocator;
-
-    // Int
-    {
-        const numbers = "0123456789";
-        inline for (0..numbers.len) |i| {
-            const tag = if (i == 0) .invalid else .int;
-
-            // base
-            {
-                var source = try io.Source.initString(allocator, numbers[i..] ++ numbers[0..i]);
-                defer source.deinit(testing.allocator);
-
-                var lexer = Lexer.init(source);
-                try testing.expectEqual(
-                    flow.Token{ .tag = tag, .start = 0, .end = source.buffer.len },
-                    lexer.next(),
-                );
-                try testing.expectEqual(
-                    flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                    lexer.next(),
-                );
-            }
-
-            // whitespace
-            {
-                var source = try io.Source.initString(allocator, " " ++ numbers[i..] ++ numbers[0..i] ++ " ");
-                defer source.deinit(testing.allocator);
-
-                var lexer = Lexer.init(source);
-                try testing.expectEqual(
-                    flow.Token{ .tag = tag, .start = 1, .end = source.buffer.len - 1 },
-                    lexer.next(),
-                );
-                try testing.expectEqual(
-                    flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                    lexer.next(),
-                );
-            }
-        }
+test "negative int literal" {
+    const numbers = "0123456789";
+    inline for (0..numbers.len) |i| {
+        var source = try io.Source.initString(testing.allocator, "-" ++ numbers[i..] ++ numbers[0..i]);
+        defer source.deinit(testing.allocator);
+        var lexer = Lexer.init(source);
+        try testing.expectEqual(
+            if (source.buffer[1] == '0')
+                flow.Token{ .tag = .invalid, .start = 0, .end = source.buffer.len }
+            else
+                flow.Token{ .tag = .int, .start = 0, .end = source.buffer.len },
+            lexer.next(),
+        );
+        try testing.expectEqual(
+            flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+            lexer.next(),
+        );
     }
-
-    // Float
-    {
-        const numbers = "0123456789";
-        inline for (0..numbers.len) |i| {
-            const rotated = numbers[i..] ++ numbers[0..i];
-            inline for (0..rotated.len + 1) |j| {
-                const tag = blk: {
-                    if (i == 0 and j != 1) break :blk .invalid;
-                    if (j == 0 or j == 10) break :blk .invalid;
-                    break :blk .float;
-                };
-
-                // base
-                {
-                    var source = try io.Source.initString(allocator, rotated[0..j] ++ "." ++ rotated[j..]);
-                    defer source.deinit(testing.allocator);
-
-                    var lexer = Lexer.init(source);
-                    try testing.expectEqual(
-                        flow.Token{ .tag = tag, .start = 0, .end = source.buffer.len },
-                        lexer.next(),
-                    );
-                    try testing.expectEqual(
-                        flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                        lexer.next(),
-                    );
-                }
-
-                // whitespace
-                {
-                    var source = try io.Source.initString(allocator, " " ++ rotated[0..j] ++ "." ++ rotated[j..] ++ " ");
-                    defer source.deinit(testing.allocator);
-
-                    var lexer = Lexer.init(source);
-                    try testing.expectEqual(
-                        flow.Token{ .tag = tag, .start = 1, .end = source.buffer.len - 1 },
-                        lexer.next(),
-                    );
-                    try testing.expectEqual(
-                        flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                        lexer.next(),
-                    );
-                }
-            }
-        }
-    }
-
-    // // String tests
-    // {
-    //     // base
-    //     {
-    //         var source = try io.Source.initString(allocator, "'string'");
-    //         defer source.deinit(testing.allocator);
-
-    //         var lexer = init(source);
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //     }
-
-    //     // Empty
-    //     {
-    //         var source = try io.Source.initString(allocator, "''");
-    //         defer source.deinit(testing.allocator);
-
-    //         var lexer = init(source);
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //     }
-
-    //     // Escaped Quotes
-    //     {
-    //         var source = try io.Source.initString(allocator, "'\\'escaped quotes\\''");
-    //         defer source.deinit(testing.allocator);
-
-    //         var lexer = init(source);
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //     }
-
-    //     // Escaped Characters
-    //     {
-    //         var source = try io.Source.initString(allocator, "'\\n\\t\\r\\'\\\\'");
-    //         defer source.deinit(testing.allocator);
-
-    //         var lexer = init(source);
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //     }
-
-    //     // Invalid Escapes
-    //     {
-    //         var source = try io.Source.initString(allocator, "'\\x'");
-    //         defer source.deinit(testing.allocator);
-
-    //         var lexer = init(source);
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .invalid, .start = 0, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //         try testing.expectEqual(
-    //             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-    //             lexer.next(),
-    //         );
-    //     }
-    // }
 }
 
-test "operators" {
+test "float literal" {
+    var numbers = "0123456789";
+    inline for (0..numbers.len) |i| {
+        var rotated = numbers[i..] ++ numbers[0..i];
+        inline for (0..rotated.len) |j| {
+            var source = try io.Source.initString(testing.allocator, rotated[j..] ++ "." ++ rotated[0..j]);
+            defer source.deinit(testing.allocator);
+            var lexer = Lexer.init(source);
+            try testing.expectEqual(
+                if (source.buffer[0] == '.' or
+                    source.buffer[source.buffer.len - 1] == '.' or
+                    source.buffer[0] == '0' and source.buffer[1] != '.')
+                    flow.Token{ .tag = .invalid, .start = 0, .end = source.buffer.len }
+                else
+                    flow.Token{ .tag = .float, .start = 0, .end = source.buffer.len },
+                lexer.next(),
+            );
+            try testing.expectEqual(
+                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+                lexer.next(),
+            );
+        }
+    }
+}
+
+test "add operator" {
     const allocator = testing.allocator;
 
     // plus
@@ -481,365 +340,598 @@ test "operators" {
                 lexer.next(),
             );
         }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " + ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .plus, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-    }
-
-    // minus
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, "-");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .minus, .start = 0, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " - ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .minus, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-    }
-
-    // multiply
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, "*");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .multiply, .start = 0, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " * ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .multiply, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-    }
-
-    // divide
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, "/");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .divide, .start = 0, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " / ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .divide, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-    }
-
-    // arrow
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, "->");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .arrow, .start = 0, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " -> ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .arrow, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // // split
-        // {
-        //     var source = try io.Source.initString(allocator, "- >");
-        //     defer source.deinit(testing.allocator);
-
-        //     var lexer = Lexer.init(source);
-        //     try testing.expectEqual(
-        //         flow.Token{ .tag = .invalid, .start = 0, .end = 1 },
-        //         lexer.next(),
-        //     );
-        //     try testing.expectEqual(
-        //         flow.Token{ .tag = .invalid, .start = 2, .end = source.buffer.len },
-        //         lexer.next(),
-        //     );
-        //     try testing.expectEqual(
-        //         flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-        //         lexer.next(),
-        //     );
-        // }
-    }
-
-    // Chain
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, "<>");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .chain, .start = 0, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " <> ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .chain, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // split
-        {
-            var source = try io.Source.initString(allocator, "< >");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .invalid, .start = 0, .end = 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .invalid, .start = 2, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-    }
-
-    // Colon
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, ":");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .colon, .start = 0, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " : ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .colon, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-    }
-
-    // Pipe
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, "|");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .pipe, .start = 0, .end = source.buffer.len },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " | ");
-            defer source.deinit(testing.allocator);
-
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .pipe, .start = 1, .end = source.buffer.len - 1 },
-                lexer.next(),
-            );
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
     }
 }
 
-test "specials" {
-    const allocator = testing.allocator;
+// test "identifiers" {
+//     const allocator = testing.allocator;
 
-    // New Line
-    {
-        // base
-        {
-            var source = try io.Source.initString(allocator, " \t\r\n\t ");
-            defer source.deinit(testing.allocator);
+//     // base
+//     {
+//         var source = try io.Source.initString(allocator, "abc123zyz");
+//         defer source.deinit(testing.allocator);
 
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
+//         var lexer = Lexer.init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .identifier, .start = 0, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
 
-        // whitespace
-        {
-            var source = try io.Source.initString(allocator, " \t\r\n\t ");
-            defer source.deinit(testing.allocator);
+//     // whitespace
+//     {
+//         var source = try io.Source.initString(allocator, " abc123zyz ");
+//         defer source.deinit(testing.allocator);
 
-            var lexer = Lexer.init(source);
-            try testing.expectEqual(
-                flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-                lexer.next(),
-            );
-        }
-    }
-}
+//         var lexer = Lexer.init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .identifier, .start = 1, .end = source.buffer.len - 1 },
+//             lexer.next(),
+//         );
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+// }
 
-test "whitespace" {
-    const allocator = testing.allocator;
+// test "literals" {
+//     const allocator = testing.allocator;
 
-    // base
-    {
-        var source = try io.Source.initString(allocator, " \t \r");
-        defer source.deinit(testing.allocator);
+//     // Int
+//     {
+//         const numbers = "0123456789";
+//         inline for (0..numbers.len) |i| {
+//             const tag = if (i == 0) .invalid else .int;
 
-        var lexer = Lexer.init(source);
-        try testing.expectEqual(
-            flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-            lexer.next(),
-        );
-    }
+//             // base
+//             {
+//                 var source = try io.Source.initString(allocator, numbers[i..] ++ numbers[0..i]);
+//                 defer source.deinit(testing.allocator);
 
-    // Empty
-    {
-        var source = try io.Source.initString(allocator, "");
-        defer source.deinit(testing.allocator);
+//                 var lexer = Lexer.init(source);
+//                 try testing.expectEqual(
+//                     flow.Token{ .tag = tag, .start = 0, .end = source.buffer.len },
+//                     lexer.next(),
+//                 );
+//                 try testing.expectEqual(
+//                     flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                     lexer.next(),
+//                 );
+//             }
 
-        var lexer = Lexer.init(source);
-        try testing.expectEqual(
-            flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
-            lexer.next(),
-        );
-    }
-}
+//             // whitespace
+//             {
+//                 var source = try io.Source.initString(allocator, " " ++ numbers[i..] ++ numbers[0..i] ++ " ");
+//                 defer source.deinit(testing.allocator);
+
+//                 var lexer = Lexer.init(source);
+//                 try testing.expectEqual(
+//                     flow.Token{ .tag = tag, .start = 1, .end = source.buffer.len - 1 },
+//                     lexer.next(),
+//                 );
+//                 try testing.expectEqual(
+//                     flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                     lexer.next(),
+//                 );
+//             }
+//         }
+//     }
+
+//     // Float
+//     {
+//         const numbers = "0123456789";
+//         inline for (0..numbers.len) |i| {
+//             const rotated = numbers[i..] ++ numbers[0..i];
+//             inline for (0..rotated.len + 1) |j| {
+//                 const tag = blk: {
+//                     if (i == 0 and j != 1) break :blk .invalid;
+//                     if (j == 0 or j == 10) break :blk .invalid;
+//                     break :blk .float;
+//                 };
+
+//                 // base
+//                 {
+//                     var source = try io.Source.initString(allocator, rotated[0..j] ++ "." ++ rotated[j..]);
+//                     defer source.deinit(testing.allocator);
+
+//                     var lexer = Lexer.init(source);
+//                     try testing.expectEqual(
+//                         flow.Token{ .tag = tag, .start = 0, .end = source.buffer.len },
+//                         lexer.next(),
+//                     );
+//                     try testing.expectEqual(
+//                         flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                         lexer.next(),
+//                     );
+//                 }
+
+//                 // whitespace
+//                 {
+//                     var source = try io.Source.initString(allocator, " " ++ rotated[0..j] ++ "." ++ rotated[j..] ++ " ");
+//                     defer source.deinit(testing.allocator);
+
+//                     var lexer = Lexer.init(source);
+//                     try testing.expectEqual(
+//                         flow.Token{ .tag = tag, .start = 1, .end = source.buffer.len - 1 },
+//                         lexer.next(),
+//                     );
+//                     try testing.expectEqual(
+//                         flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                         lexer.next(),
+//                     );
+//                 }
+//             }
+//         }
+//     }
+
+// // String tests
+// {
+//     // base
+//     {
+//         var source = try io.Source.initString(allocator, "'string'");
+//         defer source.deinit(testing.allocator);
+
+//         var lexer = init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+
+//     // Empty
+//     {
+//         var source = try io.Source.initString(allocator, "''");
+//         defer source.deinit(testing.allocator);
+
+//         var lexer = init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+
+//     // Escaped Quotes
+//     {
+//         var source = try io.Source.initString(allocator, "'\\'escaped quotes\\''");
+//         defer source.deinit(testing.allocator);
+
+//         var lexer = init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+
+//     // Escaped Characters
+//     {
+//         var source = try io.Source.initString(allocator, "'\\n\\t\\r\\'\\\\'");
+//         defer source.deinit(testing.allocator);
+
+//         var lexer = init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .string, .start = 0, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+
+//     // Invalid Escapes
+//     {
+//         var source = try io.Source.initString(allocator, "'\\x'");
+//         defer source.deinit(testing.allocator);
+
+//         var lexer = init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .invalid, .start = 0, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+// }
+// }
+
+// test "operators" {
+//     const allocator = testing.allocator;
+
+//     // plus
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, "+");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .plus, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " + ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .plus, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+
+//     // minus
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, "-");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .minus, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " - ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .minus, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+
+//     // multiply
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, "*");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .multiply, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " * ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .multiply, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+
+//     // divide
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, "/");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .divide, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " / ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .divide, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+
+//     // arrow
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, "->");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .arrow, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " -> ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .arrow, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // // split
+//         // {
+//         //     var source = try io.Source.initString(allocator, "- >");
+//         //     defer source.deinit(testing.allocator);
+
+//         //     var lexer = Lexer.init(source);
+//         //     try testing.expectEqual(
+//         //         flow.Token{ .tag = .invalid, .start = 0, .end = 1 },
+//         //         lexer.next(),
+//         //     );
+//         //     try testing.expectEqual(
+//         //         flow.Token{ .tag = .invalid, .start = 2, .end = source.buffer.len },
+//         //         lexer.next(),
+//         //     );
+//         //     try testing.expectEqual(
+//         //         flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//         //         lexer.next(),
+//         //     );
+//         // }
+//     }
+
+//     // Chain
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, "<>");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .chain, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " <> ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .chain, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // split
+//         {
+//             var source = try io.Source.initString(allocator, "< >");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .invalid, .start = 0, .end = 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .invalid, .start = 2, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+
+//     // Colon
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, ":");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .colon, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " : ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .colon, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+
+//     // Pipe
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, "|");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .pipe, .start = 0, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " | ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .pipe, .start = 1, .end = source.buffer.len - 1 },
+//                 lexer.next(),
+//             );
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+// }
+
+// test "specials" {
+//     const allocator = testing.allocator;
+
+//     // New Line
+//     {
+//         // base
+//         {
+//             var source = try io.Source.initString(allocator, " \t\r\n\t ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+
+//         // whitespace
+//         {
+//             var source = try io.Source.initString(allocator, " \t\r\n\t ");
+//             defer source.deinit(testing.allocator);
+
+//             var lexer = Lexer.init(source);
+//             try testing.expectEqual(
+//                 flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//                 lexer.next(),
+//             );
+//         }
+//     }
+// }
+
+// test "whitespace" {
+//     const allocator = testing.allocator;
+
+//     // base
+//     {
+//         var source = try io.Source.initString(allocator, " \t \r");
+//         defer source.deinit(testing.allocator);
+
+//         var lexer = Lexer.init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+
+//     // Empty
+//     {
+//         var source = try io.Source.initString(allocator, "");
+//         defer source.deinit(testing.allocator);
+
+//         var lexer = Lexer.init(source);
+//         try testing.expectEqual(
+//             flow.Token{ .tag = .end_of_frame, .start = source.buffer.len, .end = source.buffer.len },
+//             lexer.next(),
+//         );
+//     }
+// }

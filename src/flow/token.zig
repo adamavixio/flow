@@ -1,9 +1,3 @@
-const std = @import("std");
-const mem = std.mem;
-
-const root = @import("../root.zig");
-const flow = root.flow;
-
 pub const Token = @This();
 
 tag: Tag,
@@ -21,6 +15,7 @@ pub const Tag = enum {
     minus,
     multiply,
     divide,
+    set,
     arrow,
     chain,
     colon,
