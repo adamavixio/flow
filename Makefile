@@ -9,11 +9,19 @@ test:
 examples:
 	@mkdir -p tmp
 	@echo "Running all Flow examples..."
+	@echo "================================"
 	@for example in examples/*.flow; do \
-		echo "Testing $$example..."; \
-		zig build flow -- $$example > /dev/null 2>&1 || { echo "FAILED: $$example"; exit 1; }; \
+		echo ""; \
+		echo "📄 $$example"; \
+		echo "────────────────────────────────"; \
+		cat $$example; \
+		echo "────────────────────────────────"; \
+		echo "Output:"; \
+		zig build flow -- $$example 2>&1 || { echo "❌ FAILED: $$example"; exit 1; }; \
+		echo ""; \
 	done
-	@echo "All examples passed!"
+	@echo "================================"
+	@echo "✅ All examples passed!"
 
 .PHONY: all build test examples clean coverage
 
