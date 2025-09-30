@@ -14,6 +14,8 @@ pub const Interpreter = @This();
 source: io.Source,
 allocator: mem.Allocator,
 debug_enabled: bool = false,
+current_pipeline: ?flow.AST.Pipeline = null,
+current_operation: ?flow.AST.Operation = null,
 
 fn debug(self: Interpreter, comptime fmt: []const u8, args: anytype) void {
     if (!self.debug_enabled) return;
@@ -25,7 +27,65 @@ pub const Error = error{
     InvalidSource,
     TransformParametersInvalid,
     MutationParametersInvalid,
+    RuntimeError,
 };
+
+fn reportRuntimeError(self: Interpreter, err: anyerror, context: []const u8) void {
+    std.debug.print("\n=== Runtime Error ===\n", .{});
+    std.debug.print("Error: {s}\n", .{@errorName(err)});
+    std.debug.print("Context: {s}\n", .{context});
+
+    if (self.current_operation) |op| {
+        const loc = op.location();
+        std.debug.print("Location: line {d}, col {d}\n", .{ loc.start_line, loc.start_col });
+
+        // Show the source line
+        const line_start = self.getLineStart(loc.start_line);
+        const line_end = self.getLineEnd(line_start);
+        const line_text = self.source.buffer[line_start..line_end];
+        std.debug.print("  {s}\n", .{line_text});
+
+        // Show error indicator
+        var spaces: usize = 0;
+        while (spaces < loc.start_col - 1) : (spaces += 1) {
+            std.debug.print(" ", .{});
+        }
+        std.debug.print("  ^\n", .{});
+    }
+
+    // Helpful suggestions based on error type
+    if (err == error.FileNotFound) {
+        std.debug.print("\nSuggestion: Check that the file path is correct and the file exists.\n", .{});
+    } else if (err == error.AccessDenied or err == error.PermissionDenied) {
+        std.debug.print("\nSuggestion: Check file permissions or try running with appropriate access.\n", .{});
+    } else if (err == error.IsDir) {
+        std.debug.print("\nSuggestion: The path points to a directory, not a file.\n", .{});
+    } else if (err == error.NotDir) {
+        std.debug.print("\nSuggestion: The path points to a file, not a directory.\n", .{});
+    }
+
+    std.debug.print("=====================\n\n", .{});
+}
+
+fn getLineStart(self: Interpreter, line: usize) usize {
+    var current_line: usize = 1;
+    var index: usize = 0;
+    while (index < self.source.buffer.len and current_line < line) {
+        if (self.source.buffer[index] == '\n') {
+            current_line += 1;
+        }
+        index += 1;
+    }
+    return index;
+}
+
+fn getLineEnd(self: Interpreter, start: usize) usize {
+    var index = start;
+    while (index < self.source.buffer.len and self.source.buffer[index] != '\n') {
+        index += 1;
+    }
+    return index;
+}
 
 pub fn init(allocator: mem.Allocator, source: io.Source) Interpreter {
     return .{
@@ -35,21 +95,32 @@ pub fn init(allocator: mem.Allocator, source: io.Source) Interpreter {
 }
 
 /// Execute a Flow program - run all pipelines sequentially
-pub fn execute(self: Interpreter, program: flow.AST.Program) !void {
+pub fn execute(self: *Interpreter, program: flow.AST.Program) !void {
     for (program.pipelines) |pipeline| {
-        const value = try self.executePipeline(pipeline);
-        defer value.deinit(self.allocator);
+        if (self.executePipeline(pipeline)) |value| {
+            defer value.deinit(self.allocator);
+        } else |err| {
+            // Error already reported in executePipeline
+            return err;
+        }
     }
 }
 
 /// Execute a single pipeline: evaluate source, apply operations
-fn executePipeline(self: Interpreter, pipeline: flow.AST.Pipeline) !core.Value {
+fn executePipeline(self: *Interpreter, pipeline: flow.AST.Pipeline) !core.Value {
     // Evaluate the source to get initial value
-    var value = try self.evaluateSource(pipeline.source);
+    var value = self.evaluateSource(pipeline.source) catch |err| {
+        self.reportRuntimeError(err, "Failed to evaluate pipeline source");
+        return Error.RuntimeError;
+    };
+    errdefer value.deinit(self.allocator);
 
     // Apply each operation in sequence
     for (pipeline.operations) |operation| {
-        const new_value = try self.applyOperation(value, operation);
+        const new_value = self.applyOperation(value, operation) catch |err| {
+            // Don't deinit value here, errdefer will handle it
+            return err;
+        };
         // Only deinit if we got a different value back
         // (some transforms like write return the same value)
         const is_same = switch (value) {
@@ -69,7 +140,7 @@ fn executePipeline(self: Interpreter, pipeline: flow.AST.Pipeline) !core.Value {
 }
 
 /// Evaluate a source to produce a value
-fn evaluateSource(self: Interpreter, source: flow.AST.Source) anyerror!core.Value {
+fn evaluateSource(self: *Interpreter, source: flow.AST.Source) anyerror!core.Value {
     return switch (source) {
         .literal => |lit| try self.evaluateLiteral(lit.token),
         .typed => |typed| blk: {
@@ -140,15 +211,23 @@ fn evaluateLiteral(self: Interpreter, token: flow.Token) !core.Value {
 }
 
 /// Apply an operation (mutation or transform) to a value
-fn applyOperation(self: Interpreter, value: core.Value, operation: flow.AST.Operation) !core.Value {
+fn applyOperation(self: *Interpreter, value: core.Value, operation: flow.AST.Operation) !core.Value {
+    self.current_operation = operation;
+
     return switch (operation) {
-        .mutation => |mut| try self.applyMutation(value, mut),
-        .transform => |trans| try self.applyTransform(value, trans),
+        .mutation => |mut| self.applyMutation(value, mut) catch |err| {
+            self.reportRuntimeError(err, "Failed to apply mutation");
+            return Error.RuntimeError;
+        },
+        .transform => |trans| self.applyTransform(value, trans) catch |err| {
+            self.reportRuntimeError(err, "Failed to apply transform");
+            return Error.RuntimeError;
+        },
     };
 }
 
 /// Apply a mutation to a value (in-place modification)
-fn applyMutation(self: Interpreter, value: core.Value, mutation: flow.AST.Operation.Mutation) !core.Value {
+fn applyMutation(self: *Interpreter, value: core.Value, mutation: flow.AST.Operation.Mutation) !core.Value {
     // Evaluate mutation arguments
     var args = std.ArrayList(core.Value).empty;
     defer {
@@ -169,7 +248,7 @@ fn applyMutation(self: Interpreter, value: core.Value, mutation: flow.AST.Operat
 }
 
 /// Apply a transform to a value (creates new value)
-fn applyTransform(self: Interpreter, value: core.Value, transform_op: flow.AST.Operation.Transform) !core.Value {
+fn applyTransform(self: *Interpreter, value: core.Value, transform_op: flow.AST.Operation.Transform) !core.Value {
     const name = self.exchange(transform_op.name);
     const transform_tag = try core.Transform.parse(name);
 

@@ -46,7 +46,7 @@ examples-errors:
 		echo ""; \
 	done
 	@echo "================================"
-	@echo "✅ All error tests passed (4/4)!"
+	@echo "✅ All error tests passed (7/7)!"
 
 .PHONY: all build test examples examples-behaviors examples-errors clean coverage
 

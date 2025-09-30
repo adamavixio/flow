@@ -52,6 +52,13 @@ pub fn main() !void {
         std.process.exit(1);
     };
 
-    const interpreter = flow.Interpreter.init(allocator, source);
-    try interpreter.execute(program);
+    var interpreter = flow.Interpreter.init(allocator, source);
+    interpreter.execute(program) catch |err| {
+        if (err == flow.Interpreter.Error.RuntimeError) {
+            // Error already reported by interpreter
+            std.process.exit(1);
+        }
+        std.debug.print("Execution error: {s}\n", .{@errorName(err)});
+        std.process.exit(1);
+    };
 }
