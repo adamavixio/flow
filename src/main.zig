@@ -32,11 +32,12 @@ pub fn main() !void {
     var lexer = flow.Lexer.init(source);
     var parser = flow.Parser.init(arena.allocator(), &lexer);
 
-    const statements = parser.parse() catch |err| {
+    var program = parser.parse() catch |err| {
         std.debug.print("Parse error: {s}\n", .{@errorName(err)});
         return;
     };
+    defer program.deinit();
 
     const interpreter = flow.Interpreter.init(allocator, source);
-    try interpreter.execute(statements);
+    try interpreter.execute(program);
 }
