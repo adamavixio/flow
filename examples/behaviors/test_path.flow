@@ -1,1 +1,1 @@
-path : "tmp/test.txt" -> extension -> print
+path : "tmp/test.txt" -> extension -> equals ".txt" -> assert "test_path: extension should be .txt"

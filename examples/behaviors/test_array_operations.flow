@@ -1,1 +1,1 @@
-dir : "examples" -> files "*.flow" -> length -> print
+dir : "examples/behaviors" -> files "*.flow" -> length -> greater 20 -> assert "test_array_operations: should have many .flow files"

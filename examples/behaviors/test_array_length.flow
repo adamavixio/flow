@@ -1,1 +1,1 @@
-dir : "." -> files -> length -> print
+dir : "." -> files -> length -> greater 0 -> assert "test_array_length: should have files"

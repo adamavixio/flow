@@ -1,0 +1,1 @@
+bool : true -> assert "test_bool_literal: true should be true"

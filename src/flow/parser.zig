@@ -49,6 +49,11 @@ pub fn deinit(self: *Parser) void {
     self.errors.deinit(self.allocator);
 }
 
+/// Get source text for a token
+fn tokenSource(self: *Parser, token: flow.Token) []const u8 {
+    return self.lexer.source.buffer[token.start..token.end];
+}
+
 /// Add a parse error to the error list
 fn addError(self: *Parser, loc: flow.AST.SourceLocation, comptime fmt: []const u8, args: anytype) !void {
     // Don't add multiple errors while in panic mode
@@ -159,9 +164,14 @@ fn parseSource(self: *Parser) !flow.AST.Source {
         }
         self.advance();
 
-        // Parse the value (must be a literal)
+        // Parse the value (must be a literal or bool keyword)
         const value_token = self.token;
-        if (value_token.tag != .int and value_token.tag != .float and value_token.tag != .string) {
+        const is_bool_literal = value_token.tag == .identifier and
+            (std.mem.eql(u8, self.tokenSource(value_token), "true") or
+             std.mem.eql(u8, self.tokenSource(value_token), "false"));
+
+        if (value_token.tag != .int and value_token.tag != .float and
+            value_token.tag != .string and !is_bool_literal) {
             try self.addError(
                 flow.AST.SourceLocation.from_token(value_token),
                 "Expected literal value after ':', got '{s}'",

@@ -1,1 +1,1 @@
-file : "tmp/test.txt" -> copy "tmp/test_copy.txt" -> exists -> print
+file : "tmp/test.txt" -> copy "tmp/test_copy.txt" -> exists -> equals "1" -> assert "test_copy: copied file should exist"

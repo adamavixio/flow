@@ -1,0 +1,1 @@
+string : "hello world" -> starts_with "hello" -> assert "test_bool_starts_with: should start with hello"

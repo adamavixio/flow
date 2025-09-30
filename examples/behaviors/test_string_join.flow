@@ -1,1 +1,1 @@
-string : "one,two,three" -> split "," -> join " | " -> print
+string : "one,two,three" -> split "," -> join " | " -> equals "one | two | three" -> assert "test_string_join: should join with pipes"

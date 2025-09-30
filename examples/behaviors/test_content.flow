@@ -1,1 +1,1 @@
-file : "tmp/test.txt" -> content -> print
+file : "tmp/test.txt" -> content -> contains "Hello" -> assert "test_content: file should contain 'Hello'"

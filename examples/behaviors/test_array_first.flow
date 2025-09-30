@@ -1,1 +1,1 @@
-dir : "." -> files -> first -> basename -> print
+dir : "." -> files -> first -> exists -> equals "1" -> assert "test_array_first: first file should exist"

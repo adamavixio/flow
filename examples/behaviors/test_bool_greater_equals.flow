@@ -1,0 +1,1 @@
+int : 5 -> greater_equals 5 -> assert "test_bool_greater_equals: 5 >= 5"

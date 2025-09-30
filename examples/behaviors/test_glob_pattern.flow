@@ -1,1 +1,1 @@
-dir : "src" -> files "*.zig" -> length -> print
+dir : "src" -> files "*.zig" -> length -> greater 0 -> assert "test_glob_pattern: should have .zig files"

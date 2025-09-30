@@ -1,1 +1,1 @@
-string : "a,b,c,d" -> split "," -> length -> print
+string : "a,b,c,d" -> split "," -> length -> equals "4" -> assert "test_string_split: should have 4 elements"

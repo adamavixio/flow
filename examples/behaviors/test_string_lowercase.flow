@@ -1,1 +1,1 @@
-string : "HELLO WORLD" -> lowercase -> print
+string : "HELLO WORLD" -> lowercase -> equals "hello world" -> assert "test_string_lowercase: should be lowercase"

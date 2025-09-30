@@ -1,3 +1,2 @@
-int : 42 -> string -> print
-float : 3.14 -> string -> print
-string : "Flow language works!" -> print
+int : 42 -> string -> equals "42" -> assert "test_working: int to string"
+string : "Flow language works!" -> contains "Flow" -> assert "test_working: string contains Flow"

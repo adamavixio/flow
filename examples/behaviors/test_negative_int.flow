@@ -1,1 +1,1 @@
-int : -42 -> print
+int : -42 -> equals "-42" -> assert "test_negative_int: should equal -42"

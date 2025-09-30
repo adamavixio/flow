@@ -1,1 +1,1 @@
-float : -3.14 -> print
+float : -3.14 -> string -> contains "-3.14" -> assert "test_negative_float: should contain -3.14"

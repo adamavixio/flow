@@ -1,0 +1,1 @@
+string : "hello world" -> ends_with "world" -> assert "test_bool_ends_with: should end with world"

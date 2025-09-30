@@ -1,1 +1,1 @@
-string : "hello world" -> uppercase -> print
+string : "hello world" -> uppercase -> equals "HELLO WORLD" -> assert "test_string_uppercase: should be uppercase"

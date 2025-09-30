@@ -160,7 +160,7 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
     {
         const state_idx = @intFromEnum(State.identifier);
 
-        // Continue on lowercase and digits
+        // Continue on lowercase, digits, and underscores
         for ('a'..('z' + 1)) |c| {
             table[state_idx][c] = .{
                 .action = .consume,
@@ -173,6 +173,11 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
                 .next_state = .identifier,
             };
         }
+        // Add underscore support
+        table[state_idx]['_'] = .{
+            .action = .consume,
+            .next_state = .identifier,
+        };
 
         // Emit on whitespace/EOF AND operators (don't consume delimiter)
         const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>' };

@@ -1,1 +1,1 @@
-int : 42 -> string -> print
+int : 42 -> string -> equals "42" -> assert "test_lowercase_identifiers: int to string conversion"

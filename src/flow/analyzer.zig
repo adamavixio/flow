@@ -163,6 +163,19 @@ fn inferLiteralType(self: *Analyzer, token: flow.Token) Error!core.Type {
         .int => .int,
         .float => .float,
         .string => .string,
+        .identifier => blk: {
+            // Handle bool literals (true/false)
+            const text = self.exchange(token);
+            if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) {
+                break :blk .bool;
+            }
+            try self.addError(
+                flow.AST.SourceLocation.from_token(token),
+                "Invalid literal: {s}",
+                .{text},
+            );
+            return Error.AnalysisFailed;
+        },
         else => {
             const text = self.exchange(token);
             try self.addError(
@@ -323,6 +336,56 @@ fn inferTransformType(self: *Analyzer, input_type: core.Type, transform: flow.AS
             .array => .string,
             else => {
                 try self.addError(transform.loc, "Transform 'join' requires array type, got {s}", .{@tagName(input_type)});
+                return Error.AnalysisFailed;
+            },
+        },
+
+        // String comparison operations
+        .contains, .starts_with, .ends_with => switch (input_type) {
+            .string => .bool,
+            else => {
+                try self.addError(transform.loc, "Transform '{s}' requires string type, got {s}", .{ name, @tagName(input_type) });
+                return Error.AnalysisFailed;
+            },
+        },
+
+        // Comparison operations (return bool)
+        .equals, .not_equals => switch (input_type) {
+            .int, .uint, .string => .bool,
+            else => {
+                try self.addError(transform.loc, "Transform '{s}' requires int, uint, or string type, got {s}", .{ name, @tagName(input_type) });
+                return Error.AnalysisFailed;
+            },
+        },
+        .greater, .less, .greater_equals, .less_equals => switch (input_type) {
+            .int, .uint => .bool,
+            else => {
+                try self.addError(transform.loc, "Transform '{s}' requires int or uint type, got {s}", .{ name, @tagName(input_type) });
+                return Error.AnalysisFailed;
+            },
+        },
+
+        // Logical operations (bool -> bool)
+        .not => switch (input_type) {
+            .bool => .bool,
+            else => {
+                try self.addError(transform.loc, "Transform 'not' requires bool type, got {s}", .{@tagName(input_type)});
+                return Error.AnalysisFailed;
+            },
+        },
+        .@"and", .@"or" => switch (input_type) {
+            .bool => .bool,
+            else => {
+                try self.addError(transform.loc, "Transform '{s}' requires bool type, got {s}", .{ name, @tagName(input_type) });
+                return Error.AnalysisFailed;
+            },
+        },
+
+        // Assert operation
+        .assert => switch (input_type) {
+            .bool => .void,
+            else => {
+                try self.addError(transform.loc, "Transform 'assert' requires bool type, got {s}", .{@tagName(input_type)});
                 return Error.AnalysisFailed;
             },
         },

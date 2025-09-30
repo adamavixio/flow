@@ -161,7 +161,7 @@ fn evaluateSource(self: *Interpreter, source: flow.AST.Source) anyerror!core.Val
                     break :blk try core.Value.parse(self.allocator, tag, string_data);
                 },
                 // For primitive types, try to convert
-                .int, .uint, .float, .string => {
+                .int, .uint, .float, .string, .bool => {
                     if (tag == meta.activeTag(literal_value)) {
                         break :blk literal_value;
                     }
@@ -170,6 +170,7 @@ fn evaluateSource(self: *Interpreter, source: flow.AST.Source) anyerror!core.Val
                         .uint => .uint,
                         .float => .float,
                         .string => .string,
+                        .bool => return Error.InvalidSource, // Can't convert to bool
                         else => unreachable,
                     };
                     defer literal_value.deinit(self.allocator);
@@ -205,6 +206,14 @@ fn evaluateLiteral(self: Interpreter, token: flow.Token) !core.Value {
             else
                 data;
             break :blk try core.Value.parse(self.allocator, .string, trimmed);
+        },
+        .identifier => blk: {
+            const data = self.exchange(token);
+            // Handle bool literals (true/false)
+            if (mem.eql(u8, data, "true") or mem.eql(u8, data, "false")) {
+                break :blk try core.Value.parse(self.allocator, .bool, data);
+            }
+            break :blk Error.InvalidSource;
         },
         else => Error.InvalidSource,
     };
@@ -345,6 +354,103 @@ fn applyTransform(self: *Interpreter, value: core.Value, transform_op: flow.AST.
                 else => return Error.TransformParametersInvalid,
             };
             break :join_blk .{ .join = delimiter };
+        },
+        .contains => contains_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const substring = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :contains_blk .{ .contains = substring };
+        },
+        .starts_with => starts_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const prefix = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :starts_blk .{ .starts_with = prefix };
+        },
+        .ends_with => ends_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const suffix = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :ends_blk .{ .ends_with = suffix };
+        },
+        .equals => equals_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const compare_val = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :equals_blk .{ .equals = compare_val };
+        },
+        .not_equals => not_equals_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const compare_val = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :not_equals_blk .{ .not_equals = compare_val };
+        },
+        .greater => greater_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const compare_val = switch (args.items[0]) {
+                .int => |i| i.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :greater_blk .{ .greater = compare_val };
+        },
+        .less => less_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const compare_val = switch (args.items[0]) {
+                .int => |i| i.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :less_blk .{ .less = compare_val };
+        },
+        .greater_equals => greater_equals_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const compare_val = switch (args.items[0]) {
+                .int => |i| i.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :greater_equals_blk .{ .greater_equals = compare_val };
+        },
+        .less_equals => less_equals_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const compare_val = switch (args.items[0]) {
+                .int => |i| i.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :less_equals_blk .{ .less_equals = compare_val };
+        },
+        .not => .not,
+        .@"and" => and_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const bool_val = switch (args.items[0]) {
+                .bool => |b| b.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :and_blk .{ .@"and" = bool_val };
+        },
+        .@"or" => or_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const bool_val = switch (args.items[0]) {
+                .bool => |b| b.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :or_blk .{ .@"or" = bool_val };
+        },
+        .assert => assert_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const message = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :assert_blk .{ .assert = message };
         },
         .length => .length,
         .first => .first,

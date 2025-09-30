@@ -138,6 +138,7 @@ pub const Tag = enum {
     uint,
     float,
     string,
+    bool,   // Boolean type
     array,  // Renamed from tuple for clarity
     void,
     // File system types
@@ -160,6 +161,7 @@ pub fn Build(comptime tag: Tag) type {
         .uint => struct { owned: bool, data: usize },
         .float => struct { owned: bool, data: f64 },
         .string => struct { owned: bool, data: []const u8 },
+        .bool => struct { owned: bool, data: bool },
         .array => struct { owned: bool, data: []Value },
         .void => struct { owned: bool, data: void },
         .file => struct { owned: bool, data: FileData },
@@ -212,6 +214,22 @@ pub const Transform = union(enum) {
     lowercase,     // Convert string to lowercase
     split: []const u8,   // Split string by delimiter -> array
     join: []const u8,    // Join array elements with delimiter -> string
+    contains: []const u8,    // Check if string contains substring -> bool
+    starts_with: []const u8, // Check if string starts with prefix -> bool
+    ends_with: []const u8,   // Check if string ends with suffix -> bool
+    // Comparison operations (return bool)
+    equals: []const u8,        // Compare for equality (works for int, string, etc) -> bool
+    not_equals: []const u8,    // Compare for inequality -> bool
+    greater: isize,            // Greater than (numeric) -> bool
+    less: isize,               // Less than (numeric) -> bool
+    greater_equals: isize,     // Greater than or equal -> bool
+    less_equals: isize,        // Less than or equal -> bool
+    // Logical operations (bool -> bool)
+    not,           // Logical NOT
+    @"and": bool,  // Logical AND (takes bool arg)
+    @"or": bool,   // Logical OR (takes bool arg)
+    // Assert operation
+    assert: []const u8,  // Assert condition is true, exit with message if false
     // Array operations
     filter,        // Filter array elements
     map,           // Transform each array element
@@ -242,6 +260,7 @@ pub const Value = union(Tag) {
     uint: Build(.uint),
     float: Build(.float),
     string: Build(.string),
+    bool: Build(.bool),
     array: Build(.array),
     void: Build(.void),
     file: Build(.file),
@@ -258,6 +277,7 @@ pub const Value = union(Tag) {
             .uint => init(.uint, .{ .owned = false, .data = try fmt.parseInt(usize, data, 10) }),
             .float => init(.float, .{ .owned = false, .data = try fmt.parseFloat(f64, data) }),
             .string => init(.string, .{ .owned = true, .data = try allocator.dupe(u8, data) }),
+            .bool => init(.bool, .{ .owned = false, .data = mem.eql(u8, data, "true") }),
             .void => init(.void, .{ .owned = false, .data = {} }),
             .file => init(.file, .{ .owned = true, .data = try FileData.init(allocator, data) }),
             .directory => init(.directory, .{ .owned = true, .data = try DirectoryData.init(allocator, data) }),
@@ -296,6 +316,7 @@ pub const Value = union(Tag) {
             .int => |v| init(.int, v),
             .uint => |v| init(.uint, v),
             .float => |v| init(.float, v),
+            .bool => |v| init(.bool, v),
             .void => |v| init(.void, v),
             .string => |s| init(.string, .{
                 .owned = true,
@@ -471,6 +492,13 @@ pub const Value = union(Tag) {
                 },
                 inline .string => |value| blk: {
                     try writer.print("{s}\n", .{value.data});
+                    break :blk init(.void, .{
+                        .owned = false,
+                        .data = {},
+                    });
+                },
+                inline .bool => |value| blk: {
+                    try writer.print("{s}\n", .{if (value.data) "true" else "false"});
                     break :blk init(.void, .{
                         .owned = false,
                         .data = {},
@@ -712,6 +740,147 @@ pub const Value = union(Tag) {
                 },
                 else => return Error.InvalidTransform,
             },
+            // String comparison operations
+            .contains => |substring| switch (self) {
+                inline .string => |string| init(.bool, .{
+                    .owned = false,
+                    .data = mem.indexOf(u8, string.data, substring) != null,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .starts_with => |prefix| switch (self) {
+                inline .string => |string| init(.bool, .{
+                    .owned = false,
+                    .data = mem.startsWith(u8, string.data, prefix),
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .ends_with => |suffix| switch (self) {
+                inline .string => |string| init(.bool, .{
+                    .owned = false,
+                    .data = mem.endsWith(u8, string.data, suffix),
+                }),
+                else => return Error.InvalidTransform,
+            },
+            // Comparison operations
+            .equals => |compare_val| switch (self) {
+                inline .int => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data == try fmt.parseInt(isize, compare_val, 10),
+                }),
+                inline .uint => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data == try fmt.parseInt(usize, compare_val, 10),
+                }),
+                inline .string => |value| init(.bool, .{
+                    .owned = false,
+                    .data = mem.eql(u8, value.data, compare_val),
+                }),
+                inline .bool => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data == mem.eql(u8, compare_val, "true"),
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .not_equals => |compare_val| switch (self) {
+                inline .int => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data != try fmt.parseInt(isize, compare_val, 10),
+                }),
+                inline .uint => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data != try fmt.parseInt(usize, compare_val, 10),
+                }),
+                inline .string => |value| init(.bool, .{
+                    .owned = false,
+                    .data = !mem.eql(u8, value.data, compare_val),
+                }),
+                inline .bool => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data != mem.eql(u8, compare_val, "true"),
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .greater => |compare_val| switch (self) {
+                inline .int => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data > compare_val,
+                }),
+                inline .uint => |value| init(.bool, .{
+                    .owned = false,
+                    .data = @as(isize, @intCast(value.data)) > compare_val,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .less => |compare_val| switch (self) {
+                inline .int => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data < compare_val,
+                }),
+                inline .uint => |value| init(.bool, .{
+                    .owned = false,
+                    .data = @as(isize, @intCast(value.data)) < compare_val,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .greater_equals => |compare_val| switch (self) {
+                inline .int => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data >= compare_val,
+                }),
+                inline .uint => |value| init(.bool, .{
+                    .owned = false,
+                    .data = @as(isize, @intCast(value.data)) >= compare_val,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .less_equals => |compare_val| switch (self) {
+                inline .int => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data <= compare_val,
+                }),
+                inline .uint => |value| init(.bool, .{
+                    .owned = false,
+                    .data = @as(isize, @intCast(value.data)) <= compare_val,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            // Logical operations
+            .not => switch (self) {
+                inline .bool => |value| init(.bool, .{
+                    .owned = false,
+                    .data = !value.data,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .@"and" => |other| switch (self) {
+                inline .bool => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data and other,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            .@"or" => |other| switch (self) {
+                inline .bool => |value| init(.bool, .{
+                    .owned = false,
+                    .data = value.data or other,
+                }),
+                else => return Error.InvalidTransform,
+            },
+            // Assert operation
+            .assert => |message| switch (self) {
+                inline .bool => |value| blk: {
+                    if (!value.data) {
+                        std.debug.print("\n❌ Assertion failed: {s}\n", .{message});
+                        std.process.exit(1);
+                    }
+                    break :blk init(.void, .{
+                        .owned = false,
+                        .data = {},
+                    });
+                },
+                else => return Error.InvalidTransform,
+            },
             // Array operations
             .length => switch (self) {
                 inline .array => |array| init(.uint, .{
@@ -753,6 +922,7 @@ pub const Value = union(Tag) {
         .uint => usize,
         .float => f64,
         .string => []const u8,
+        .bool => bool,
         .array => []Value,
         .void => void,
         .file => FileData,
@@ -767,6 +937,7 @@ pub const Value = union(Tag) {
             .uint => value.uint.data,
             .float => value.float.data,
             .string => value.string.data,
+            .bool => value.bool.data,
             .array => value.array.data,
             .void => value.void.data,
             .file => value.file.data,

@@ -1,1 +1,1 @@
-int : 0 -> print
+int : 0 -> equals "0" -> assert "test_zero: zero should equal 0"

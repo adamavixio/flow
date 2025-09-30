@@ -1,0 +1,1 @@
+int : 2 -> less 5 -> assert "test_bool_less: 2 < 5"

@@ -1,1 +1,1 @@
-file : "tmp/output.txt" -> write "Hello, Flow!" -> exists -> print
+file : "tmp/output.txt" -> write "Hello, Flow!" -> exists -> equals "1" -> assert "test_write: file should exist after write"
