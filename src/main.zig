@@ -31,10 +31,11 @@ pub fn main() !void {
 
     var lexer = flow.Lexer.init(source);
     var parser = flow.Parser.init(arena.allocator(), &lexer);
+    defer parser.deinit();
 
     var program = parser.parse() catch |err| {
         std.debug.print("Parse error: {s}\n", .{@errorName(err)});
-        return;
+        std.process.exit(1);
     };
     defer program.deinit();
 
@@ -45,10 +46,10 @@ pub fn main() !void {
     analyzer.analyze(&program) catch |err| {
         if (err == flow.Analyzer.Error.AnalysisFailed) {
             // Errors already printed by analyzer
-            return;
+            std.process.exit(1);
         }
         std.debug.print("Analysis error: {s}\n", .{@errorName(err)});
-        return;
+        std.process.exit(1);
     };
 
     const interpreter = flow.Interpreter.init(allocator, source);

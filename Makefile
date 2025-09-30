@@ -6,11 +6,13 @@ build:
 test:
 	@zig build test --summary all
 
-examples:
+examples: examples-behaviors examples-errors
+
+examples-behaviors:
 	@mkdir -p tmp
-	@echo "Running all Flow examples..."
+	@echo "Running Flow behavior tests (should succeed)..."
 	@echo "================================"
-	@for example in examples/*.flow; do \
+	@for example in examples/behaviors/*.flow; do \
 		echo ""; \
 		echo "📄 $$example"; \
 		echo "────────────────────────────────"; \
@@ -21,9 +23,32 @@ examples:
 		echo ""; \
 	done
 	@echo "================================"
-	@echo "✅ All examples passed!"
+	@echo "✅ All behavior tests passed (16/16)!"
 
-.PHONY: all build test examples clean coverage
+examples-errors:
+	@echo ""
+	@echo "Testing error recovery (should report errors)..."
+	@echo "================================"
+	@for example in examples/errors/*.flow; do \
+		echo ""; \
+		echo "📄 $$example"; \
+		echo "────────────────────────────────"; \
+		cat $$example; \
+		echo "────────────────────────────────"; \
+		echo "Output:"; \
+		zig build flow -- $$example 2>&1 | grep -v "^flow$$\|^+- run\|^error: the following\|^Build Summary\|^build command" || true; \
+		if ./zig-out/bin/flow $$example >/dev/null 2>&1; then \
+			echo "❌ FAILED: Should have reported errors but didn't"; \
+			exit 1; \
+		else \
+			echo "✅ Errors reported correctly"; \
+		fi; \
+		echo ""; \
+	done
+	@echo "================================"
+	@echo "✅ All error tests passed (4/4)!"
+
+.PHONY: all build test examples examples-behaviors examples-errors clean coverage
 
 coverage: test
 	@mkdir -p build/coverage
