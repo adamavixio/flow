@@ -1,0 +1,1 @@
+dir : "examples" -> files "*.flow" -> length -> print

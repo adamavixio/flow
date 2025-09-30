@@ -19,7 +19,9 @@ zig-out/
 *.swo
 
 # Temporary files
-tmp/
+tmp/*
+!tmp/.gitkeep
+!tmp/test.txt
 .DS_Store
 Thumbs.db
 
@@ -31,3 +33,4 @@ Thumbs.db
 .Trashes
 ehthumbs.db
 Thumbs.db
+

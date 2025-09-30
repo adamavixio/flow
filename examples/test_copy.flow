@@ -1,0 +1,1 @@
+file : "tmp/test.txt" -> copy "tmp/test_copy.txt" -> exists -> print
