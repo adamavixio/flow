@@ -48,7 +48,7 @@ examples-errors:
 	@echo "================================"
 	@echo "✅ All error tests passed (7/7)!"
 
-.PHONY: all build test examples examples-behaviors examples-errors clean coverage
+.PHONY: all build test examples examples-behaviors examples-errors clean coverage install uninstall
 
 coverage: test
 	@mkdir -p build/coverage
@@ -56,6 +56,16 @@ coverage: test
 	    kcov --include-pattern=flow build/coverage $$test_binary; \
 	done
 	@open build/coverage/index.html
+
+install: build
+	@echo "Installing Flow to /usr/local/bin..."
+	@sudo cp zig-out/bin/flow /usr/local/bin/flow
+	@echo "✅ Flow installed! Try 'flow --help'"
+
+uninstall:
+	@echo "Uninstalling Flow from /usr/local/bin..."
+	@sudo rm -f /usr/local/bin/flow
+	@echo "✅ Flow uninstalled"
 
 clean:
 	@rm -rf build
