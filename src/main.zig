@@ -38,6 +38,19 @@ pub fn main() !void {
     };
     defer program.deinit();
 
+    // Run semantic analysis
+    var analyzer = flow.Analyzer.init(arena.allocator(), source);
+    defer analyzer.deinit();
+
+    analyzer.analyze(&program) catch |err| {
+        if (err == flow.Analyzer.Error.AnalysisFailed) {
+            // Errors already printed by analyzer
+            return;
+        }
+        std.debug.print("Analysis error: {s}\n", .{@errorName(err)});
+        return;
+    };
+
     const interpreter = flow.Interpreter.init(allocator, source);
     try interpreter.execute(program);
 }
