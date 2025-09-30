@@ -66,6 +66,12 @@ fn printHelp() void {
         \\        dir : "." -> files -> first -> print
         \\        dir : "src" -> files "*.zig" -> length -> print
         \\
+        \\    String operations:
+        \\        string : "hello world" -> uppercase -> print
+        \\        string : "HELLO WORLD" -> lowercase -> print
+        \\        string : "a,b,c" -> split "," -> length -> print
+        \\        string : "a,b,c" -> split "," -> join " | " -> print
+        \\
         \\ERROR HANDLING:
         \\    Flow provides helpful error messages with:
         \\    - Exact source location (line and column)

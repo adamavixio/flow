@@ -304,6 +304,29 @@ fn inferTransformType(self: *Analyzer, input_type: core.Type, transform: flow.AS
             },
         },
 
+        // String operations
+        .uppercase, .lowercase => switch (input_type) {
+            .string => .string,
+            else => {
+                try self.addError(transform.loc, "Transform '{s}' requires string type, got {s}", .{ name, @tagName(input_type) });
+                return Error.AnalysisFailed;
+            },
+        },
+        .split => switch (input_type) {
+            .string => .array,
+            else => {
+                try self.addError(transform.loc, "Transform 'split' requires string type, got {s}", .{@tagName(input_type)});
+                return Error.AnalysisFailed;
+            },
+        },
+        .join => switch (input_type) {
+            .array => .string,
+            else => {
+                try self.addError(transform.loc, "Transform 'join' requires array type, got {s}", .{@tagName(input_type)});
+                return Error.AnalysisFailed;
+            },
+        },
+
         // Array operations
         .length => switch (input_type) {
             .array => .uint,

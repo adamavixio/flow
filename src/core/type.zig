@@ -207,6 +207,11 @@ pub const Transform = union(enum) {
     copy: []const u8,    // Copy file to destination path
     files: ?[]const u8,  // List files in directory with optional pattern
     write: []const u8,   // Write content to file
+    // String operations
+    uppercase,     // Convert string to uppercase
+    lowercase,     // Convert string to lowercase
+    split: []const u8,   // Split string by delimiter -> array
+    join: []const u8,    // Join array elements with delimiter -> string
     // Array operations
     filter,        // Filter array elements
     map,           // Transform each array element
@@ -622,6 +627,88 @@ pub const Value = union(Tag) {
                     };
                     // Return the same file object
                     break :blk self;
+                },
+                else => return Error.InvalidTransform,
+            },
+            // String operations
+            .uppercase => switch (self) {
+                inline .string => |string| blk: {
+                    const result = try allocator.alloc(u8, string.data.len);
+                    for (string.data, 0..) |char, i| {
+                        result[i] = std.ascii.toUpper(char);
+                    }
+                    break :blk init(.string, .{
+                        .owned = true,
+                        .data = result,
+                    });
+                },
+                else => return Error.InvalidTransform,
+            },
+            .lowercase => switch (self) {
+                inline .string => |string| blk: {
+                    const result = try allocator.alloc(u8, string.data.len);
+                    for (string.data, 0..) |char, i| {
+                        result[i] = std.ascii.toLower(char);
+                    }
+                    break :blk init(.string, .{
+                        .owned = true,
+                        .data = result,
+                    });
+                },
+                else => return Error.InvalidTransform,
+            },
+            .split => |delimiter| switch (self) {
+                inline .string => |string| blk: {
+                    if (delimiter.len == 0) return Error.InvalidTransform;
+
+                    var parts = std.ArrayList(Value).empty;
+                    var iter = mem.splitSequence(u8, string.data, delimiter);
+                    while (iter.next()) |part| {
+                        const part_value = init(.string, .{
+                            .owned = true,
+                            .data = try allocator.dupe(u8, part),
+                        });
+                        try parts.append(allocator, part_value);
+                    }
+
+                    break :blk init(.array, .{
+                        .owned = true,
+                        .data = try parts.toOwnedSlice(allocator),
+                    });
+                },
+                else => return Error.InvalidTransform,
+            },
+            .join => |delimiter| switch (self) {
+                inline .array => |array| blk: {
+                    // Calculate total length needed
+                    var total_len: usize = 0;
+                    for (array.data, 0..) |item, i| {
+                        switch (item) {
+                            .string => |s| {
+                                total_len += s.data.len;
+                                if (i < array.data.len - 1) total_len += delimiter.len;
+                            },
+                            else => return Error.InvalidTransform, // Can only join strings
+                        }
+                    }
+
+                    // Build result string
+                    var result = try allocator.alloc(u8, total_len);
+                    var pos: usize = 0;
+                    for (array.data, 0..) |item, i| {
+                        const s = item.string.data;
+                        @memcpy(result[pos..pos + s.len], s);
+                        pos += s.len;
+                        if (i < array.data.len - 1) {
+                            @memcpy(result[pos..pos + delimiter.len], delimiter);
+                            pos += delimiter.len;
+                        }
+                    }
+
+                    break :blk init(.string, .{
+                        .owned = true,
+                        .data = result,
+                    });
                 },
                 else => return Error.InvalidTransform,
             },

@@ -23,7 +23,7 @@ examples-behaviors:
 		echo ""; \
 	done
 	@echo "================================"
-	@echo "✅ All behavior tests passed (16/16)!"
+	@echo "✅ All behavior tests passed (20/20)!"
 
 examples-errors:
 	@echo ""

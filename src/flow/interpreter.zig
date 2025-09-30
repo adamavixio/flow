@@ -328,6 +328,24 @@ fn applyTransform(self: *Interpreter, value: core.Value, transform_op: flow.AST.
             } else null;
             break :files_blk .{ .files = pattern };
         },
+        .uppercase => .uppercase,
+        .lowercase => .lowercase,
+        .split => split_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const delimiter = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :split_blk .{ .split = delimiter };
+        },
+        .join => join_blk: {
+            if (args.items.len != 1) return Error.TransformParametersInvalid;
+            const delimiter = switch (args.items[0]) {
+                .string => |s| s.data,
+                else => return Error.TransformParametersInvalid,
+            };
+            break :join_blk .{ .join = delimiter };
+        },
         .length => .length,
         .first => .first,
         .last => .last,
