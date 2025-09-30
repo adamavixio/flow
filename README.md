@@ -1,588 +1,451 @@
-# Flow
+# Flow - Pure Dataflow Language
 
-# Types
+Flow is an AI-first programming language for file manipulation and data processing. It uses **pure dataflow semantics** where data flows through pipelines without variables, functions, or imperative control flow.
 
-## Primitive
+## Core Philosophy
 
-### Boolean
+- **NO variables** - Data flows, never stops
+- **NO functions** - Pipelines compose directly
+- **NO statements** - Everything is a pipeline
+- **Linear & predictable** - Perfect for AI generation
 
-* bool
+## Quick Start
 
-### Unsigned Integer
+```bash
+# Install Flow (requires sudo)
+make install
 
-* uint
-* u16
-* u3zwxAQd
-* u64
-* u128
+# Run Flow code directly
+flow 'int : 42 -> print'
+flow 'dir : "." -> files "*.md" -> length -> print'
 
-> [!NOTE]
-> The 'uint' type is either 32-bit (u32) or 64-bit (u64) depending on computer architecture
+# Or run from a file
+flow examples/behaviors/test_simple.flow
 
-### Signed Integer
+# Get help
+flow --help
 
-* int
-* i16
-* i32
-* i64
-* i128
+# Check version
+flow --version
 
-> The 'int' type is either 32-bit (i32) or 64-bit (i64) depending on computer architecture
-
-### Floating Pointer Number
-
-* float
-* f16
-* f32
-* f64
-* f128
-
-> The 'float' type is 64-bit (f64)
-
-### String
-
-* string
-
-> The 'string' type is []const u8 and immutable
-
-## Syntax
-
-### Declaration
-
-```text
-[type] : [Expression]
+# Development
+zig build          # Build Flow
+zig build test     # Run unit tests
+make examples      # Run all example tests
 ```
 
-### Examples
-
-```text
-int : 10
-file : path 'path/to/file.ext'
+⚠️ **Important**: When running Flow from command line, use single quotes (') not double quotes ("):
+```bash
+✅ flow 'dir : "." -> files'   # Correct
+❌ flow "dir : "." -> files"   # Wrong - shell strips quotes
 ```
 
-file :
-    path 'path_3' <>
-    path 'path_4' -> lines | deduplicate
+## Syntax Overview
 
-file
-    : path 'path_3'
-    <> path 'path_4'
-    -> lines | deduplicate ||
+Flow programs are pipelines that transform data:
 
-* file <- path <> 'path_1' || path <> 'path_2' -> lines | sort <> asc -> print
-* file : path 'path_3' <> path 'path_4' -> lines | deduplicate ||
-* string : 'string' | sort .asc | unique
+```flow
+type : value -> transform -> transform
+```
 
-file : path 'path_1' <> path 'path_2' -> sort => [name]
-[name] =>
-'name' =>
+- `type : value` - Source (where data comes from)
+- `->` - Transform (creates new value)
+- `|` - Mutation (reserved for future in-place modifications)
 
-file : path 'path_1' <> path 'path_2' -> lines | sort asc -> print
-file : path ('path_1') <> path ('path_2') -> lines | sort (asc) -> print
-int : 10 | add 5 -> out 'my_int'
-in : 'my_int' -> string -> print
-in : 'my_int' -> sub 5 -> print
+**Note**: Currently, use `->` for all operations. The `|` operator is reserved for Phase 4 performance optimizations (in-place mutations for large data).
 
-# Compiler Pipeline Guide
+## Working Examples
 
-## 1. Lexical Analysis (Scanning)
+### 1. Basic Primitives
 
-**Role**: Convert raw source text into meaningful tokens
+```flow
+# Integer
+int : 42 -> print
+# Output: 42
 
-**Components**:
+# Float
+float : 3.14 -> print
+# Output: 3.14
 
-* `token.zig`: Defines token types and operations
-* `lexer.zig`: Implements the scanning process
+# String
+string : "Hello, Flow!" -> print
+# Output: Hello, Flow!
 
-**Scope**:
+# Negative numbers
+int : -42 -> print
+# Output: -42
 
-* Character-by-character analysis
-* Token identification
-* Error detection for invalid characters/sequences
-* Source location tracking
-* Whitespace handling
-* Comment handling
+# Zero
+int : 0 -> print
+# Output: 0
+```
 
-**Examples**:
+### 2. Type Conversion
 
+```flow
+# Integer to string
+int : 42 -> string -> print
+# Output: 42
+
+# Multiple conversions
+int : 42 -> string -> print
+float : 3.14 -> string -> print
+string : "Flow language works!" -> print
+# Output:
+# 42
+# 3.14
+# Flow language works!
+```
+
+### 3. File Operations
+
+```flow
+# Read file content
+file : "test.txt" -> content -> print
+# Output: Hello from test.txt
+
+# Write to file (returns file for chaining)
+file : "output.txt" -> write "Hello, Flow!" -> exists -> print
+# Output: 1
+
+# Copy file
+file : "test.txt" -> copy "test_copy.txt" -> exists -> print
+# Output: 1
+
+# File properties
+file : "test.txt" -> size -> print
+file : "test.txt" -> extension -> print
+file : "test.txt" -> basename -> print
+file : "test.txt" -> dirname -> print
+```
+
+### 4. Directory Operations
+
+```flow
+# List files in directory
+dir : "." -> files -> print
+# Output:
+# [
+#   ./file1.txt
+#   ./file2.txt
+#   ...
+# ]
+
+# Glob pattern matching
+dir : "src" -> files "*.zig" -> length -> print
+# Output: 2
+
+# Get specific file from list
+dir : "." -> files -> first -> basename -> print
+# Output: file1.txt
+```
+
+### 5. Array Operations
+
+```flow
+# Array length
+dir : "." -> files -> length -> print
+# Output: 10
+
+# First element
+dir : "." -> files -> first -> basename -> print
+# Output: .DS_Store
+
+# Last element
+dir : "." -> files -> last -> basename -> print
+```
+
+### 6. Path Operations
+
+```flow
+# Path type for path manipulation
+path : "tmp/test.txt" -> extension -> print
+# Output: .txt
+
+path : "src/main.zig" -> basename -> print
+# Output: main.zig
+
+path : "src/main.zig" -> dirname -> print
+# Output: src
+```
+
+### 7. String Operations
+
+```flow
+# Convert case
+string : "hello world" -> uppercase -> print
+# Output: HELLO WORLD
+
+string : "HELLO WORLD" -> lowercase -> print
+# Output: hello world
+
+# Split string into array
+string : "a,b,c,d" -> split "," -> length -> print
+# Output: 4
+
+# Split and join with different delimiter
+string : "one,two,three" -> split "," -> join " | " -> print
+# Output: one | two | three
+```
+
+### 8. Boolean Operations
+
+```flow
+# Boolean literals
+bool : true -> print
+# Output: true
+
+bool : false -> print
+# Output: false
+
+# Comparisons (return bool)
+int : 42 -> equals "42" -> print
+# Output: true
+
+int : 10 -> greater 5 -> print
+# Output: true
+
+int : 3 -> less_equals 5 -> print
+# Output: true
+
+# String comparisons
+string : "hello world" -> contains "world" -> print
+# Output: true
+
+string : "hello" -> starts_with "hel" -> print
+# Output: true
+
+string : "hello" -> ends_with "lo" -> print
+# Output: true
+
+# Logical operations
+bool : false -> not -> print
+# Output: true
+
+# Assert for testing
+int : 42 -> equals "42" -> assert "42 should equal 42"
+# Exits silently on success, prints error and exits 1 on failure
+```
+
+## Type System
+
+### Primitives
+- `int` - Signed integer (architecture dependent, 32 or 64-bit)
+- `float` - Floating point (64-bit)
+- `string` - Immutable UTF-8 string
+- `bool` - Boolean (true/false)
+- `uint` - Unsigned integer
+
+### File System
+- `file` - File handle with path
+- `directory` (alias: `dir`) - Directory handle
+- `path` - Path manipulation without I/O
+
+### Collections
+- `array` - Array of values
+
+## Transform Operations (->)
+
+Transforms create new values:
+
+| Operation | Input | Output | Description |
+|-----------|-------|--------|-------------|
+| `print` | any | void | Print value to stdout |
+| `string` | any | string | Convert to string |
+| `int` | any | int | Convert to integer |
+| `float` | any | float | Convert to float |
+| `content` | file | string | Read file contents |
+| `write <str>` | file | file | Write string to file |
+| `copy <path>` | file | file | Copy file to path |
+| `exists` | file | int | Check if file exists (1/0) |
+| `size` | file | int | Get file size in bytes |
+| `extension` | file/path | string | Get file extension |
+| `basename` | file/path | string | Get file name |
+| `dirname` | file/path | string | Get directory name |
+| `files [pattern]` | directory | array | List files (optional glob) |
+| `uppercase` | string | string | Convert to uppercase |
+| `lowercase` | string | string | Convert to lowercase |
+| `split <delim>` | string | array | Split by delimiter |
+| `join <delim>` | array | string | Join with delimiter |
+| `contains <str>` | string | bool | Check if contains substring |
+| `starts_with <str>` | string | bool | Check if starts with prefix |
+| `ends_with <str>` | string | bool | Check if ends with suffix |
+| `equals <val>` | int/uint/string | bool | Compare for equality |
+| `not_equals <val>` | int/uint/string | bool | Compare for inequality |
+| `greater <num>` | int/uint | bool | Greater than |
+| `less <num>` | int/uint | bool | Less than |
+| `greater_equals <num>` | int/uint | bool | Greater than or equal |
+| `less_equals <num>` | int/uint | bool | Less than or equal |
+| `not` | bool | bool | Logical NOT |
+| `and <bool>` | bool | bool | Logical AND |
+| `or <bool>` | bool | bool | Logical OR |
+| `assert <msg>` | bool | void | Assert true, exit with message if false |
+| `length` | array | int | Get array length |
+| `first` | array | any | Get first element |
+| `last` | array | any | Get last element |
+
+## Mutation Operations (|)
+
+⚠️ **Reserved for Phase 4** - The `|` operator will enable in-place mutations for performance optimization with large data structures. Not yet implemented.
+
+**Future operations** (planned for Phase 4):
+
+| Operation | Input | Effect |
+|-----------|-------|--------|
+| `sort` | array | Sort array in place |
+| `uppercase` | string | Convert to uppercase in place (large strings) |
+| `filter` | array | Filter elements in place |
+| `map` | array | Transform each element in place |
+
+**Rationale**: In-place mutations will avoid copying large data structures (like `*struct` in Go or `&mut` in Rust), improving performance for file processing workflows.
+
+## Architecture
+
+Flow uses a pure dataflow execution model:
+
+```
+Source Code → Lexer → Parser → Analyzer → Interpreter
+                ↓       ↓         ↓          ↓
+            Tokens  Program   Types     Execution
+                            (Pipeline[])
+```
+
+### Key Components
+
+**Lexer** ([src/flow/lexer.zig](src/flow/lexer.zig)):
+- Table-driven DFA with 19 states
+- Position tracking for error messages
+- Handles all operators: `->`, `|`, `<>`, `:`, etc.
+
+**Parser** ([src/flow/parser.zig](src/flow/parser.zig)):
+- Builds `Program` containing `Pipeline[]`
+- No statements or expressions - pure dataflow
+- Source locations on every AST node
+- Panic-mode error recovery (reports all errors)
+
+**Analyzer** ([src/flow/analyzer.zig](src/flow/analyzer.zig)):
+- Compile-time type checking through dataflow analysis
+- Type inference through pipelines
+- Catches type mismatches before execution
+
+**AST** ([src/flow/ast.zig](src/flow/ast.zig)):
 ```zig
-// Token definition
-pub const Token = struct {
-    tag: Tag,
-    location: Location,
-    lexeme: []const u8,
-};
-
-// Input:
-file: path 'input.txt' -> lines | sort -> print
-
-// Tokens:
-[identifier "file"]
-[colon ":"]
-[identifier "path"]
-[string "input.txt"]
-[arrow "->"]
-[identifier "lines"]
-[pipe "|"]
-[identifier "sort"]
-[arrow "->"]
-[identifier "print"]
+Program → Pipeline[] → [Source, Operation[], Split?]
 ```
 
-## 2. Syntactic Analysis (Parsing)
+**Interpreter** ([src/flow/interpreter.zig](src/flow/interpreter.zig)):
+- Executes pipelines by flowing data through operations
+- Memory-safe value management
+- Graceful error handling with helpful messages
+- Runtime error context and suggestions
 
-**Role**: Convert token stream into Abstract Syntax Tree (AST)
+## Future Features (Not Yet Implemented)
 
-**Components**:
+### Named Pipeline Definitions
+```flow
+pipeline transform_user : (row) ->
+    get "name"
+    | uppercase
+    -> prefix "User: "
 
-* `parser.zig`: Implements parsing logic
-* `ast.zig`: Defines tree structure
-* `error.zig`: Parser error handling
-
-**Scope**:
-
-* Grammar rule validation
-* Tree construction
-* Error recovery
-* Expression parsing
-* Statement parsing
-* Basic type recognition
-
-**Examples**:
-
-```zig
-// AST Node definition
-pub const Node = union(enum) {
-    Program: struct {
-        pipelines: std.ArrayList(*Node),
-    },
-    Pipeline: struct {
-        input_type: []const u8,
-        input: *Node,
-        operations: *Node,
-    },
-    // ...
-};
-
-// Grammar rules:
-pipeline → type ":" value operations
-operations → (transform | mutation)*
-transform → "->" identifier
-mutation → "|" identifier
+db : "users" -> query "..." | foreach transform_user
 ```
 
-## 3. Semantic Analysis
-
-**Role**: Validate program meaning and correctness
-
-**Components**:
-
-* `types.zig`: Type system implementation
-* `analyzer.zig`: Semantic validation
-* `symbols.zig`: Symbol table management
-* `scope.zig`: Scope tracking
-
-**Scope**:
-
-* Type checking
-* Type inference
-* Operation validation
-* Method availability
-* Pipeline compatibility
-* Symbol resolution
-* Scope management
-* Error detection
-
-**Examples**:
-
-```zig
-// Type checking
-file: path 'input.txt' -> lines | sort -> print
-//    ^ path returns file
-//                     ^ lines returns string[]
-//                              ^ sort requires string[]
-//                                      ^ print accepts any
-
-// Error cases:
-string: 'hello' | sort -> count  // Error: sort not defined for string
-int: 5 -> lines                  // Error: lines only works on file
+### Parallel Execution (`<>`)
+```flow
+file : "data.json"
+    -> content
+    | parse_json
+    <> (
+        db : "postgres://prod" | insert "analytics",
+        file : "backup.json" | write
+    )
 ```
 
-## 4. Method and Type System
-
-**Role**: Manage type capabilities and extensibility
-
-**Components**:
-
-* `trait.zig`: Type trait definitions
-* `method.zig`: Method registration
-* `registry.zig`: Type/method registry
-
-**Scope**:
-
-* Method definitions
-* Type capabilities
-* Operation mapping
-* Method resolution
-* Type conversion
-* Plugin system
-
-**Examples**:
-
-```zig
-// Method definition
-method string.split(delimiter: string) -> string[] {
-    return self | split_at delimiter
-}
-
-// Type trait
-pub fn Transformable(comptime Self: type) type {
-    return struct {
-        pub fn string(self: *Self) !*String {
-            // Implementation
-        }
-    };
-}
-
-// Registry
-const registry = TypeRegistry.init(allocator);
-try registry.registerMethod("string", "split", splitImpl);
+### Error Handling
+```flow
+file : "config.json" ->? content | parse_json -> print
+# ->? operator for safe navigation
 ```
 
-## 5. Runtime Execution
+### Semantic Analyzer
+- Type inference through dataflow
+- Compile-time type checking
+- Better error messages with source locations
 
-**Role**: Execute the validated program
+## Development
 
-**Components**:
-
-* `runtime.zig`: Execution engine
-* `value.zig`: Runtime value representation
-* `pipeline.zig`: Pipeline execution
-* `operations.zig`: Operation implementations
-
-**Scope**:
-
-* Value management
-* Operation execution
-* Pipeline orchestration
-* Memory management
-* Error handling
-* I/O operations
-
-**Examples**:
-
-```zig
-// Pipeline execution
-pub fn executePipeline(self: *Runtime, pipeline: *Node) !void {
-    var value = try self.executeInput(pipeline.input);
-    
-    for (pipeline.operations.items) |op| {
-        value = switch (op.kind) {
-            .transform => try self.executeTransform(value, op),
-            .mutation => try self.executeMutation(value, op),
-            .terminal => try self.executeTerminal(value, op),
-        };
-    }
-}
-
-// Operation implementation
-fn executeTransform(value: *Value, op: Operation) !*Value {
-    return switch (op.name[0]) {
-        'lines' => readLines(value),
-        'string' => toString(value),
-        else => error.UnknownOperation,
-    };
-}
+### Project Structure
+```
+flow/
+├── src/
+│   ├── core/                    # Type system and values
+│   ├── flow/                    # Lexer, parser, AST, analyzer, interpreter
+│   ├── io/                      # File I/O operations
+│   └── main.zig                 # Entry point
+├── examples/
+│   ├── behaviors/               # Working Flow programs (positive tests)
+│   └── errors/                  # Error test cases (negative tests)
+├── docs/
+│   ├── GOALS.md                 # Development roadmap
+│   ├── REVIEW.md                # Architecture analysis
+│   ├── DECISIONS.md             # Design decisions
+│   └── LLM.md                   # LLM testing report
+├── CLAUDE.md                    # Project documentation (AI context)
+├── INSTALL.md                   # Installation and usage guide
+└── README.md                    # This file
 ```
 
-## 6. Extensibility System
+### Current Status (2025-09-30)
 
-**Role**: Enable language extension and customization
+✅ **Phase 2 Complete**:
+- Production-quality table-driven lexer (19 states)
+- Pure dataflow AST (no statements!)
+- Semantic analyzer with compile-time type checking
+- Parser error recovery (reports all errors)
+- Enhanced error messages with helpful suggestions
+- Graceful runtime error handling
+- String execution (run code without files)
+- 23 comprehensive tests (16 behaviors + 7 errors)
+- LLM tested and validated
 
-**Components**:
+✅ **Phase 3a Complete** (String Operations):
+- ✅ `uppercase`, `lowercase` - Case conversion
+- ✅ `split`, `join` - String/array operations
 
-* `plugin.zig`: Plugin system
-* `custom.zig`: Custom method support
-* `extension.zig`: Type extension
+🚀 **Phase 3b Complete** (Boolean Operations):
+- ✅ `bool` type with `true`/`false` literals
+- ✅ Comparison operations: `equals`, `greater`, `less`, etc.
+- ✅ String comparisons: `contains`, `starts_with`, `ends_with`
+- ✅ Logical operations: `not`, `and`, `or`
+- ✅ Testing: `assert` operation
+- ✅ 39 comprehensive tests (32 behaviors + 7 errors)
 
-**Scope**:
+🎯 **Phase 3 Next Steps**:
+- JSON/YAML/TOML parsing
+- Math operations (add, subtract, multiply, divide)
+- More array operations (filter, map, reduce)
+- Based on user feedback
 
-* Plugin loading
-* Method registration
-* Type extension
-* Custom operations
-* User-defined methods
-* Error handling
+### Contributing
 
-**Examples**:
+Flow is in active development. The language design prioritizes:
+1. **AI-friendliness** - Linear, predictable syntax
+2. **Pure dataflow** - No hidden state or side effects
+3. **File operations** - First-class file/directory support
+4. **Simplicity** - Minimal concepts, maximum power
 
-```zig
-// Plugin definition
-const MyPlugin = struct {
-    pub fn register(registry: *Registry) !void {
-        try registry.addMethod("string", "reverse", reverse);
-        try registry.addMethod("file", "word_count", wordCount);
-    }
-};
+See [CLAUDE.md](CLAUDE.md) for the complete vision and [GOALS.md](GOALS.md) for the development roadmap.
 
-// Custom method
-method file.word_count() -> int {
-    return self -> lines | split ' ' -> count
-}
-```
+## License
 
-## 7. Error Handling
+[Add your license here]
 
-**Role**: Provide clear error reporting and recovery
+## Documentation
 
-**Components**:
-
-* `error.zig`: Error types and messages
-* `diagnostic.zig`: Error reporting
-* `recovery.zig`: Error recovery
-
-**Scope**:
-
-* Error detection
-* Error messages
-* Source location
-* Recovery strategies
-* Diagnostic output
-* Error aggregation
-
-**Examples**:
-
-```zig
-// Error types
-pub const CompileError = error{
-    InvalidSyntax,
-    TypeMismatch,
-    UndefinedMethod,
-    InvalidOperation,
-};
-
-// Error reporting
-pub fn reportError(self: *Diagnostic, err: CompileError, token: Token) !void {
-    const loc = token.location;
-    try self.errors.append(.{
-        .error = err,
-        .message = getMessage(err),
-        .line = loc.line,
-        .column = loc.column,
-    });
-}
-```
-
-// 1. Arena/GPA for AST and compilation
-pub const Compiler = struct {
-    gpa: std.heap.GeneralPurposeAllocator(.{}),
-    arena: std.heap.ArenaAllocator,
-    ast_arena: std.heap.ArenaAllocator, // Separate arena for AST
-    symbols: SymbolTable,
-
-    pub fn init() Compiler {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        return .{
-            .gpa = gpa,
-            .arena = std.heap.ArenaAllocator.init(gpa.allocator()),
-            .ast_arena = std.heap.ArenaAllocator.init(gpa.allocator()),
-            .symbols = SymbolTable.init(gpa.allocator()),
-        };
-    }
-
-    pub fn deinit(self: *Compiler) void {
-        self.ast_arena.deinit();  // Free all AST nodes at once
-        self.arena.deinit();      // Free other compilation data
-        self.symbols.deinit();
-        _ = self.gpa.deinit();
-    }
-};
-
-// 2. Symbol/Variable Management
-pub const Symbol = struct {
-    name: []const u8,
-    kind: SymbolKind,
-    data: union {
-        variable: struct {
-            type_tag: TypeTag,
-            is_mutable: bool,
-            value: ?*Value,
-        },
-        function: struct {
-            params: []const TypeTag,
-            return_type: TypeTag,
-        },
-    },
-};
-
-pub const SymbolTable = struct {
-    const Scope = struct {
-        parent: ?*Scope,
-        symbols: std.StringHashMap(Symbol),
-    };
-
-    allocator: std.mem.Allocator,
-    current_scope: *Scope,
-    scopes: std.ArrayList(*Scope),
-
-    pub fn enterScope(self: *SymbolTable) !void {
-        const new_scope = try self.allocator.create(Scope);
-        new_scope.* = .{
-            .parent = self.current_scope,
-            .symbols = std.StringHashMap(Symbol).init(self.allocator),
-        };
-        try self.scopes.append(new_scope);
-        self.current_scope = new_scope;
-    }
-
-    pub fn exitScope(self: *SymbolTable) void {
-        const old_scope = self.scopes.pop();
-        old_scope.symbols.deinit();
-        self.allocator.destroy(old_scope);
-        self.current_scope = if (self.scopes.items.len > 0)
-            self.scopes.items[self.scopes.items.len - 1]
-        else
-            null;
-    }
-
-    pub fn define(self: *SymbolTable, name: []const u8, symbol: Symbol) !void {
-        try self.current_scope.symbols.put(name, symbol);
-    }
-
-    pub fn lookup(self: SymbolTable, name: []const u8) ?Symbol {
-        var current = self.current_scope;
-        while (current) |scope| {
-            if (scope.symbols.get(name)) |symbol| {
-                return symbol;
-            }
-            current = scope.parent;
-        }
-        return null;
-    }
-};
-
-// 3. Runtime Value Management
-pub const Value = struct {
-    type_tag: TypeTag,
-    data: union {
-        int: i64,
-        float: f64,
-        string: []const u8,
-        list: std.ArrayList(*Value),
-        map: std.StringHashMap(*Value),
-    },
-    allocator: std.mem.Allocator,
-
-    pub fn init(allocator: std.mem.Allocator, type_tag: TypeTag) !*Value {
-        const value = try allocator.create(Value);
-        value.* = .{
-            .type_tag = type_tag,
-            .data = undefined,
-            .allocator = allocator,
-        };
-        return value;
-    }
-
-    pub fn deinit(self: *Value) void {
-        switch (self.type_tag) {
-            .String => self.allocator.free(self.data.string),
-            .List => {
-                for (self.data.list.items) |item| {
-                    item.deinit();
-                }
-                self.data.list.deinit();
-            },
-            .Map => {
-                var iter = self.data.map.iterator();
-                while (iter.next()) |entry| {
-                    entry.value_ptr.*.deinit();
-                }
-                self.data.map.deinit();
-            },
-            else => {},
-        }
-        self.allocator.destroy(self);
-    }
-};
-
-// 4. Pipeline Stage Memory Management
-pub const PipelineStage = struct {
-    input: *Value,
-    output: ?*Value,
-    allocator: std.mem.Allocator,
-
-    pub fn init(allocator: std.mem.Allocator, input: *Value) PipelineStage {
-        return .{
-            .allocator = allocator,
-            .input = input,
-            .output = null,
-        };
-    }
-
-    pub fn deinit(self: *PipelineStage) void {
-        if (self.output) |output| {
-            if (output != self.input) {
-                output.deinit();
-            }
-        }
-    }
-
-    pub fn transform(self: *PipelineStage, op: Operation) !void {
-        const result = try op.execute(self.allocator, self.input);
-        if (self.output) |old| {
-            if (old != self.input) {
-                old.deinit();
-            }
-        }
-        self.output = result;
-    }
-};
-
-// 5. Example Usage
-pub fn main() !void {
-    var compiler = Compiler.init();
-    defer compiler.deinit();
-
-    // Parse source
-    const source = 
-        \\file: path 'input.txt' -> lines | sort -> print
-        \\string: 'hello' -> uppercase -> print
-    ;
-    
-    // Compilation phase - uses arena
-    const ast = try compiler.parse(source);
-
-    // Create runtime
-    var runtime = Runtime.init(compiler.gpa.allocator());
-    defer runtime.deinit();
-
-    try runtime.execute(ast);
-}
-
-// 6. Runtime Execution Example
-pub const Runtime = struct {
-    allocator: std.mem.Allocator,
-    values: std.ArrayList(*Value),
-
-    pub fn executePipeline(self: *Runtime, pipeline: *Node) !void {
-        var stage = PipelineStage.init(
-            self.allocator,
-            try self.evaluateInput(pipeline.input)
-        );
-        defer stage.deinit();
-
-        for (pipeline.operations.items) |op| {
-            try stage.transform(op);
-        }
-
-        // Track allocated value
-        try self.values.append(stage.output.?);
-    }
-
-    pub fn deinit(self: *Runtime) void {
-        for (self.values.items) |value| {
-            value.deinit();
-        }
-        self.values.deinit();
-    }
-};
+- [CLAUDE.md](CLAUDE.md) - Complete language vision and philosophy
+- [INSTALL.md](INSTALL.md) - Installation and usage guide
+- [docs/GOALS.md](docs/GOALS.md) - Phased development roadmap
+- [docs/REVIEW.md](docs/REVIEW.md) - Architecture analysis
+- [docs/DECISIONS.md](docs/DECISIONS.md) - Key design choices
+- [docs/LLM.md](docs/LLM.md) - LLM testing report (Claude Code)
