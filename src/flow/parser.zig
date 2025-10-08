@@ -11,6 +11,7 @@ const flow = lib.flow;
 const Parser = @This();
 
 token: flow.Token,
+prev_token: flow.Token,
 lexer: *flow.Lexer,
 allocator: mem.Allocator,
 errors: std.ArrayList(ParseError),
@@ -33,8 +34,10 @@ pub const Error = error{
 } || mem.Allocator.Error;
 
 pub fn init(allocator: mem.Allocator, lexer: *flow.Lexer) Parser {
+    const first_token = lexer.next();
     return .{
-        .token = lexer.next(),
+        .token = first_token,
+        .prev_token = first_token, // Initialize to first token
         .lexer = lexer,
         .allocator = allocator,
         .errors = std.ArrayList(ParseError).empty,
@@ -148,11 +151,47 @@ fn parsePipeline(self: *Parser) !flow.AST.Pipeline {
 
 /// Parse a source: literal or typed literal
 fn parseSource(self: *Parser) !flow.AST.Source {
-    // Check for typed source: "int : 42" or "file : "test.txt""
+    // Check for typed source: "int : 42" or "array<int> : [1,2,3]"
     if (self.token.tag == .identifier) {
         const type_name = self.token;
         const loc_start = flow.AST.SourceLocation.from_token(type_name);
         self.advance();
+
+        // Check for generic type parameters: array<int>, map<string, int>
+        var type_params = std.ArrayList(flow.Token).empty;
+        errdefer type_params.deinit(self.allocator);
+
+        if (self.token.tag == .left_angle) {
+            self.advance(); // consume <
+
+            // Parse comma-separated type parameters
+            while (true) {
+                if (self.token.tag != .identifier) {
+                    try self.addError(
+                        flow.AST.SourceLocation.from_token(self.token),
+                        "Expected type parameter, got '{s}'",
+                        .{@tagName(self.token.tag)},
+                    );
+                    return Error.ParseFailed;
+                }
+                try type_params.append(self.allocator, self.token);
+                self.advance();
+
+                if (self.token.tag == .right_angle) {
+                    self.advance(); // consume >
+                    break;
+                } else if (self.token.tag == .comma) {
+                    self.advance(); // consume comma and continue
+                } else {
+                    try self.addError(
+                        flow.AST.SourceLocation.from_token(self.token),
+                        "Expected ',' or '>' in type parameters, got '{s}'",
+                        .{@tagName(self.token.tag)},
+                    );
+                    return Error.ParseFailed;
+                }
+            }
+        }
 
         if (self.token.tag != .colon) {
             try self.addError(
@@ -164,7 +203,54 @@ fn parseSource(self: *Parser) !flow.AST.Source {
         }
         self.advance();
 
-        // Parse the value (must be a literal or bool keyword)
+        // Check if this is an array literal: array<int> : [1, 2, 3]
+        const type_name_str = self.tokenSource(type_name);
+        if (std.mem.eql(u8, type_name_str, "array")) {
+            if (type_params.items.len != 1) {
+                try self.addError(
+                    loc_start,
+                    "Array type requires exactly one type parameter, got {d}",
+                    .{type_params.items.len},
+                );
+                return Error.ParseFailed;
+            }
+
+            if (self.token.tag != .left_bracket) {
+                try self.addError(
+                    flow.AST.SourceLocation.from_token(self.token),
+                    "Expected '[' for array literal, got '{s}'",
+                    .{@tagName(self.token.tag)},
+                );
+                return Error.ParseFailed;
+            }
+            return try self.parseArrayLiteral(type_params.items, loc_start);
+        }
+
+        // Check if this is a map literal: map<string, int> : {"key": 42}
+        if (std.mem.eql(u8, type_name_str, "map")) {
+            if (type_params.items.len != 2) {
+                try self.addError(
+                    loc_start,
+                    "Map type requires exactly two type parameters, got {d}",
+                    .{type_params.items.len},
+                );
+                return Error.ParseFailed;
+            }
+
+            if (self.token.tag != .left_brace) {
+                try self.addError(
+                    flow.AST.SourceLocation.from_token(self.token),
+                    "Expected open brace for map literal, got '{s}'",
+                    .{@tagName(self.token.tag)},
+                );
+                return Error.ParseFailed;
+            }
+            return try self.parseMapLiteral(type_params.items, loc_start);
+        }
+
+        // Regular typed literal: int : 42, file : "test.txt"
+        defer type_params.deinit(self.allocator);
+
         const value_token = self.token;
         const is_bool_literal = value_token.tag == .identifier and
             (std.mem.eql(u8, self.tokenSource(value_token), "true") or
@@ -217,6 +303,171 @@ fn parseSource(self: *Parser) !flow.AST.Source {
         .{@tagName(self.token.tag)},
     );
     return Error.ParseFailed;
+}
+
+/// Parse array literal: [1, 2, 3]
+fn parseArrayLiteral(self: *Parser, element_type: []flow.Token, loc_start: flow.AST.SourceLocation) !flow.AST.Source {
+    self.advance(); // consume [
+
+    var elements = std.ArrayList(flow.AST.Source).empty;
+    errdefer {
+        for (elements.items) |*elem| elem.deinit(self.allocator);
+        elements.deinit(self.allocator);
+    }
+
+    // Parse comma-separated elements
+    while (self.token.tag != .right_bracket) {
+        if (self.token.tag == .end_of_frame) {
+            try self.addError(
+                flow.AST.SourceLocation.from_token(self.token),
+                "Unexpected end of input, expected ']'",
+                .{},
+            );
+            return Error.ParseFailed;
+        }
+
+        // Parse element (can be any literal)
+        const elem = try self.parseLiteralValue();
+        try elements.append(self.allocator, elem);
+
+        if (self.token.tag == .comma) {
+            self.advance(); // consume comma
+            // Allow trailing comma
+            if (self.token.tag == .right_bracket) {
+                break;
+            }
+        } else if (self.token.tag != .right_bracket) {
+            try self.addError(
+                flow.AST.SourceLocation.from_token(self.token),
+                "Expected ',' or ']' in array literal, got '{s}'",
+                .{@tagName(self.token.tag)},
+            );
+            return Error.ParseFailed;
+        }
+    }
+
+    const loc_end = flow.AST.SourceLocation.from_token(self.token);
+    self.advance(); // consume ]
+
+    // Clone type_params for AST (it will be freed by caller)
+    const element_type_copy = try self.allocator.alloc(flow.Token, element_type.len);
+    @memcpy(element_type_copy, element_type);
+
+    return flow.AST.Source{
+        .array = .{
+            .element_type = element_type_copy,
+            .elements = try elements.toOwnedSlice(self.allocator),
+            .loc = flow.AST.SourceLocation.merge(loc_start, loc_end),
+        },
+    };
+}
+
+/// Parse map literal: {"key": value, ...}
+fn parseMapLiteral(self: *Parser, type_params: []flow.Token, loc_start: flow.AST.SourceLocation) !flow.AST.Source {
+    self.advance(); // consume {
+
+    var pairs = std.ArrayList(flow.AST.MapPair).empty;
+    errdefer {
+        for (pairs.items) |*pair| pair.deinit(self.allocator);
+        pairs.deinit(self.allocator);
+    }
+
+    // Parse comma-separated key:value pairs
+    while (self.token.tag != .right_brace) {
+        if (self.token.tag == .end_of_frame) {
+            try self.addError(
+                flow.AST.SourceLocation.from_token(self.token),
+                "Unexpected end of input, expected close brace",
+                .{},
+            );
+            return Error.ParseFailed;
+        }
+
+        const pair_loc_start = flow.AST.SourceLocation.from_token(self.token);
+
+        // Parse key
+        const key = try self.parseLiteralValue();
+
+        // Expect colon
+        if (self.token.tag != .colon) {
+            try self.addError(
+                flow.AST.SourceLocation.from_token(self.token),
+                "Expected ':' after map key, got '{s}'",
+                .{@tagName(self.token.tag)},
+            );
+            return Error.ParseFailed;
+        }
+        self.advance();
+
+        // Parse value
+        const value = try self.parseLiteralValue();
+
+        const pair_loc_end = flow.AST.SourceLocation.from_token(self.prev_token);
+        try pairs.append(self.allocator, flow.AST.MapPair{
+            .key = key,
+            .value = value,
+            .loc = flow.AST.SourceLocation.merge(pair_loc_start, pair_loc_end),
+        });
+
+        if (self.token.tag == .comma) {
+            self.advance(); // consume comma
+            // Allow trailing comma
+            if (self.token.tag == .right_brace) {
+                break;
+            }
+        } else if (self.token.tag != .right_brace) {
+            try self.addError(
+                flow.AST.SourceLocation.from_token(self.token),
+                "Expected comma or close brace in map literal, got '{s}'",
+                .{@tagName(self.token.tag)},
+            );
+            return Error.ParseFailed;
+        }
+    }
+
+    const loc_end = flow.AST.SourceLocation.from_token(self.token);
+    self.advance(); // consume }
+
+    // Clone type_params for AST
+    const key_type = try self.allocator.alloc(flow.Token, 1);
+    const value_type = try self.allocator.alloc(flow.Token, 1);
+    key_type[0] = type_params[0];
+    value_type[0] = type_params[1];
+
+    return flow.AST.Source{
+        .map = .{
+            .key_type = key_type,
+            .value_type = value_type,
+            .pairs = try pairs.toOwnedSlice(self.allocator),
+            .loc = flow.AST.SourceLocation.merge(loc_start, loc_end),
+        },
+    };
+}
+
+/// Parse a literal value (int, float, string, bool) - helper for array/map parsing
+fn parseLiteralValue(self: *Parser) !flow.AST.Source {
+    const value_token = self.token;
+    const is_bool_literal = value_token.tag == .identifier and
+        (std.mem.eql(u8, self.tokenSource(value_token), "true") or
+         std.mem.eql(u8, self.tokenSource(value_token), "false"));
+
+    if (value_token.tag != .int and value_token.tag != .float and
+        value_token.tag != .string and !is_bool_literal) {
+        try self.addError(
+            flow.AST.SourceLocation.from_token(value_token),
+            "Expected literal value, got '{s}'",
+            .{@tagName(value_token.tag)},
+        );
+        return Error.ParseFailed;
+    }
+    self.advance();
+
+    return flow.AST.Source{
+        .literal = .{
+            .token = value_token,
+            .loc = flow.AST.SourceLocation.from_token(value_token),
+        },
+    };
 }
 
 /// Parse an operation: mutation (|) or transform (->)
@@ -273,6 +524,7 @@ fn parseOperation(self: *Parser) !flow.AST.Operation {
 }
 
 pub fn advance(self: *Parser) void {
+    self.prev_token = self.token;
     self.token = self.lexer.next();
 }
 

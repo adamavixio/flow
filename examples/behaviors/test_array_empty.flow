@@ -1,0 +1,1 @@
+array<int> : [] -> length -> equals "0" -> assert "empty array should have length 0"

@@ -37,6 +37,12 @@ pub const State = enum(u8) {
     pipe,
     left_angle,
     left_angle_right_angle,
+    right_angle,
+    left_bracket,
+    right_bracket,
+    left_brace,
+    right_brace,
+    comma,
     invalid,
     accept, // Used as next_state for .emit actions (never actually entered)
 };
@@ -154,6 +160,30 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
             .action = .consume_goto,
             .next_state = .left_angle,
         };
+        table[state_idx]['>'] = .{
+            .action = .consume_goto,
+            .next_state = .right_angle,
+        };
+        table[state_idx]['['] = .{
+            .action = .consume_goto,
+            .next_state = .left_bracket,
+        };
+        table[state_idx][']'] = .{
+            .action = .consume_goto,
+            .next_state = .right_bracket,
+        };
+        table[state_idx]['{'] = .{
+            .action = .consume_goto,
+            .next_state = .left_brace,
+        };
+        table[state_idx]['}'] = .{
+            .action = .consume_goto,
+            .next_state = .right_brace,
+        };
+        table[state_idx][','] = .{
+            .action = .consume_goto,
+            .next_state = .comma,
+        };
     }
 
     // State.identifier transitions
@@ -180,7 +210,7 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
         };
 
         // Emit on whitespace/EOF AND operators (don't consume delimiter)
-        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>' };
+        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>', '[', ']', '{', '}', ',' };
         for (delims) |c| {
             table[state_idx][c] = .{
                 .action = .emit,
@@ -200,7 +230,7 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
         };
 
         // Allow zero to terminate as int on whitespace/EOF/operators
-        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>' };
+        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>', '[', ']', '{', '}', ',' };
         for (delims) |c| {
             table[state_idx][c] = .{
                 .action = .emit,
@@ -229,7 +259,7 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
         };
 
         // Emit int on whitespace/EOF AND operators
-        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>' };
+        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>', '[', ']', '{', '}', ',' };
         for (delims) |c| {
             table[state_idx][c] = .{
                 .action = .emit,
@@ -267,7 +297,7 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
         }
 
         // Emit float on whitespace/EOF AND operators
-        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>' };
+        const delims = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>', '[', ']', '{', '}', ',' };
         for (delims) |c| {
             table[state_idx][c] = .{
                 .action = .emit,
@@ -334,7 +364,8 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
 
         // According to original lexer: must be followed by specific chars
         // ws, +, -, *, /, |, :, <, >, EOF (NUL 0, not digit '0')
-        const follow_set = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>' };
+        // Plus new delimiters: [, ], {, }, ,
+        const follow_set = [_]u8{ ' ', '\n', '\t', '\r', 0, '+', '-', '*', '/', '|', ':', '<', '>', '[', ']', '{', '}', ',' };
         for (follow_set) |c| {
             table[state_idx][c] = .{
                 .action = .emit,
@@ -433,7 +464,21 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
             .next_state = .left_angle_right_angle,
         };
 
-        // Single < is invalid (no other valid follow)
+        // Single < is now valid for generics
+        // Emit < before ANY other character (except >)
+        for (0..256) |c_usize| {
+            const c: u8 = @intCast(c_usize);
+            if (c != '>') {
+                // Only set if not already set (don't override the > case)
+                if (table[state_idx][c].action == .error_invalid) {
+                    table[state_idx][c] = .{
+                        .action = .emit,
+                        .next_state = .accept,
+                        .token_tag = .left_angle,
+                    };
+                }
+            }
+        }
     }
 
     // State.left_angle_right_angle transitions (<>)
@@ -446,6 +491,30 @@ fn buildTransitionTable() [@typeInfo(State).@"enum".fields.len][256]Transition {
                 .next_state = .accept,
                 .token_tag = .chain,
             };
+        }
+    }
+
+    // New delimiter states (single character tokens)
+    // These should emit before ANY character
+    for ([_]struct { state: State, tag: flow.Token.Tag }{
+        .{ .state = .right_angle, .tag = .right_angle },
+        .{ .state = .left_bracket, .tag = .left_bracket },
+        .{ .state = .right_bracket, .tag = .right_bracket },
+        .{ .state = .left_brace, .tag = .left_brace },
+        .{ .state = .right_brace, .tag = .right_brace },
+        .{ .state = .comma, .tag = .comma },
+    }) |info| {
+        const state_idx = @intFromEnum(info.state);
+        // Emit before any character
+        for (0..256) |c_usize| {
+            const c: u8 = @intCast(c_usize);
+            if (table[state_idx][c].action == .error_invalid) {
+                table[state_idx][c] = .{
+                    .action = .emit,
+                    .next_state = .accept,
+                    .token_tag = info.tag,
+                };
+            }
         }
     }
 

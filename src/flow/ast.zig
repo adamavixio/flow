@@ -33,6 +33,18 @@ pub const SourceLocation = struct {
     }
 };
 
+/// Key-value pair for map literals
+pub const MapPair = struct {
+    key: Source,
+    value: Source,
+    loc: SourceLocation,
+
+    pub fn deinit(self: *MapPair, allocator: mem.Allocator) void {
+        self.key.deinit(allocator);
+        self.value.deinit(allocator);
+    }
+};
+
 /// Root of a Flow program - a collection of pipelines
 /// This is the only top-level structure in Flow
 pub const Program = struct {
@@ -92,6 +104,21 @@ pub const Source = union(enum) {
         loc: SourceLocation,
     },
 
+    /// Array literal: array<int> : [1, 2, 3]
+    array: struct {
+        element_type: []flow.Token,  // Type path (e.g., ["array", "int"])
+        elements: []Source,
+        loc: SourceLocation,
+    },
+
+    /// Map literal: map<string, int> : {"key": 42}
+    map: struct {
+        key_type: []flow.Token,
+        value_type: []flow.Token,
+        pairs: []MapPair,
+        loc: SourceLocation,
+    },
+
     /// Reference to a named pipeline: pipeline transform_user
     pipeline_ref: struct {
         name: flow.Token,
@@ -105,6 +132,8 @@ pub const Source = union(enum) {
         return switch (self) {
             .literal => |l| l.loc,
             .typed => |t| t.loc,
+            .array => |a| a.loc,
+            .map => |m| m.loc,
             .pipeline_ref => |r| r.loc,
             .pipeline => |p| p.loc,
         };
@@ -115,6 +144,21 @@ pub const Source = union(enum) {
             .typed => |*t| {
                 t.value.deinit(allocator);
                 allocator.destroy(t.value);
+            },
+            .array => |*a| {
+                allocator.free(a.element_type);
+                for (a.elements) |*elem| {
+                    elem.deinit(allocator);
+                }
+                allocator.free(a.elements);
+            },
+            .map => |*m| {
+                allocator.free(m.key_type);
+                allocator.free(m.value_type);
+                for (m.pairs) |*pair| {
+                    pair.deinit(allocator);
+                }
+                allocator.free(m.pairs);
             },
             .pipeline => |p| {
                 p.deinit(allocator);

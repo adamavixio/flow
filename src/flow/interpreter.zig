@@ -143,6 +143,30 @@ fn executePipeline(self: *Interpreter, pipeline: flow.AST.Pipeline) !core.Value 
 fn evaluateSource(self: *Interpreter, source: flow.AST.Source) anyerror!core.Value {
     return switch (source) {
         .literal => |lit| try self.evaluateLiteral(lit.token),
+        .array => |arr| {
+            // Evaluate each element
+            var values = std.ArrayList(core.Value).empty;
+            errdefer {
+                for (values.items) |*v| v.deinit(self.allocator);
+                values.deinit(self.allocator);
+            }
+
+            for (arr.elements) |elem| {
+                const value = try self.evaluateSource(elem);
+                try values.append(self.allocator, value);
+            }
+
+            const array_data = try values.toOwnedSlice(self.allocator);
+            return core.Value.init(.array, .{
+                .owned = true,
+                .data = array_data,
+            });
+        },
+        .map => |m| {
+            // TODO: Implement map literal evaluation
+            _ = m;
+            return Error.InvalidSource;
+        },
         .typed => |typed| blk: {
             const tag = try core.Type.parse(self.exchange(typed.type_name));
             const literal_value = try self.evaluateSource(typed.value.*);
@@ -476,7 +500,7 @@ test "execute simple pipeline" {
     var lexer = flow.Lexer.init(source);
     var parser = flow.Parser.init(arena.allocator(), &lexer);
 
-    const interpreter = init(arena.allocator(), source);
+    var interpreter = init(arena.allocator(), source);
     var program = try parser.parse();
     defer program.deinit();
 

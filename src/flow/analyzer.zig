@@ -145,6 +145,18 @@ fn inferSourceType(self: *Analyzer, source: flow.AST.Source) Error!core.Type {
 
             break :blk tag;
         },
+        .array => |arr| blk: {
+            // TODO: Validate array element types match declared type
+            // For now, just return array type
+            _ = arr;
+            break :blk .array;
+        },
+        .map => |m| blk: {
+            // TODO: Validate map key/value types match declared types
+            // For now, just return void (we'll add map type later)
+            _ = m;
+            break :blk .void;
+        },
         .pipeline_ref => |ref| {
             const name = self.exchange(ref.name);
             try self.addError(ref.loc, "Pipeline references not yet implemented: {s}", .{name});

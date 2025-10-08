@@ -447,6 +447,38 @@ pub const Value = union(Tag) {
                 inline .array => &.{},
                 else => Error.InvalidTransform,
             },
+            // String operations (Phase 3a)
+            .uppercase, .lowercase => switch (self) {
+                inline .string => &.{},
+                else => Error.InvalidTransform,
+            },
+            .split, .join => switch (self) {
+                inline .string, .array => &.{},
+                else => Error.InvalidTransform,
+            },
+            // Boolean comparison operations (Phase 3b)
+            .contains, .starts_with, .ends_with => switch (self) {
+                inline .string => &.{},
+                else => Error.InvalidTransform,
+            },
+            .equals, .not_equals => switch (self) {
+                inline .int, .uint, .string => &.{},
+                else => Error.InvalidTransform,
+            },
+            .greater, .less, .greater_equals, .less_equals => switch (self) {
+                inline .int, .uint => &.{},
+                else => Error.InvalidTransform,
+            },
+            // Boolean logical operations (Phase 3b)
+            .not, .@"and", .@"or" => switch (self) {
+                inline .bool => &.{},
+                else => Error.InvalidTransform,
+            },
+            // Assert operation (Phase 3b)
+            .assert => switch (self) {
+                inline .bool => &.{},
+                else => Error.InvalidTransform,
+            },
         };
     }
 
@@ -1127,6 +1159,25 @@ test Value {
             // Array operation transforms - just verify they parse correctly
             .filter, .map, .each, .length, .first, .last => {
                 // These transforms are tested separately in array-specific tests
+            },
+            // String operation transforms (Phase 3a)
+            .uppercase, .lowercase, .split, .join => {
+                // These transforms are tested separately in string-specific tests
+            },
+            // Boolean comparison transforms (Phase 3b)
+            .contains, .starts_with, .ends_with => {
+                // String comparison operations
+            },
+            .equals, .not_equals, .greater, .less, .greater_equals, .less_equals => {
+                // Comparison operations
+            },
+            // Boolean logical transforms (Phase 3b)
+            .not, .@"and", .@"or" => {
+                // Logical operations
+            },
+            // Assert operation (Phase 3b)
+            .assert => {
+                // Assert operation
                 // For now, just ensure they can be parsed
             },
         }

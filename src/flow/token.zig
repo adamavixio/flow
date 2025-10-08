@@ -25,6 +25,14 @@ pub const Tag = enum {
     chain,
     colon,
     pipe,
+    // Delimiters (for arrays and maps)
+    left_angle,       // <
+    right_angle,      // >
+    left_bracket,     // [
+    right_bracket,    // ]
+    left_brace,       // {
+    right_brace,      // }
+    comma,            // ,
     // Special
     invalid,
     end_of_frame,
