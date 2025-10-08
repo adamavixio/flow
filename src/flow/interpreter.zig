@@ -163,9 +163,41 @@ fn evaluateSource(self: *Interpreter, source: flow.AST.Source) anyerror!core.Val
             });
         },
         .map => |m| {
-            // TODO: Implement map literal evaluation
-            _ = m;
-            return Error.InvalidSource;
+            // Create a new StringHashMap
+            var map = std.StringHashMap(core.Value).init(self.allocator);
+            errdefer {
+                var it = map.iterator();
+                while (it.next()) |entry| {
+                    entry.value_ptr.*.deinit(self.allocator);
+                }
+                map.deinit();
+            }
+
+            // Evaluate each key-value pair
+            for (m.pairs) |pair| {
+                // Keys must be string literals
+                const key_value = try self.evaluateSource(pair.key);
+                defer key_value.deinit(self.allocator);
+
+                const key_string = switch (key_value) {
+                    .string => |s| s.data,
+                    else => return Error.InvalidSource,
+                };
+
+                // Duplicate the key for the map
+                const owned_key = try self.allocator.dupe(u8, key_string);
+
+                // Evaluate the value
+                const value = try self.evaluateSource(pair.value);
+
+                // Insert into map
+                try map.put(owned_key, value);
+            }
+
+            return core.Value.init(.map, .{
+                .owned = true,
+                .data = map,
+            });
         },
         .typed => |typed| blk: {
             const tag = try core.Type.parse(self.exchange(typed.type_name));
@@ -307,6 +339,23 @@ fn applyTransform(self: *Interpreter, value: core.Value, transform_op: flow.AST.
                     std.debug.print("\n", .{});
                 }
                 std.debug.print("]\n", .{});
+            },
+            .map => |m| {
+                std.debug.print("{{\n", .{});
+                var it = m.data.iterator();
+                while (it.next()) |entry| {
+                    std.debug.print("  \"{s}\": ", .{entry.key_ptr.*});
+                    switch (entry.value_ptr.*) {
+                        .int => |v| std.debug.print("{d}", .{v.data}),
+                        .uint => |v| std.debug.print("{d}", .{v.data}),
+                        .float => |v| std.debug.print("{d}", .{v.data}),
+                        .string => |s| std.debug.print("\"{s}\"", .{s.data}),
+                        .bool => |b| std.debug.print("{s}", .{if (b.data) "true" else "false"}),
+                        else => std.debug.print("?", .{}),
+                    }
+                    std.debug.print("\n", .{});
+                }
+                std.debug.print("}}\n", .{});
             },
             else => {},
         }

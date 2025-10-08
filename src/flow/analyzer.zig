@@ -153,9 +153,9 @@ fn inferSourceType(self: *Analyzer, source: flow.AST.Source) Error!core.Type {
         },
         .map => |m| blk: {
             // TODO: Validate map key/value types match declared types
-            // For now, just return void (we'll add map type later)
+            // For now, just return map type
             _ = m;
-            break :blk .void;
+            break :blk .map;
         },
         .pipeline_ref => |ref| {
             const name = self.exchange(ref.name);

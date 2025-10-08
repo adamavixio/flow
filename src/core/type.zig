@@ -140,6 +140,7 @@ pub const Tag = enum {
     string,
     bool,   // Boolean type
     array,  // Renamed from tuple for clarity
+    map,    // Map/dictionary type (key-value pairs)
     void,
     // File system types
     file,
@@ -163,6 +164,7 @@ pub fn Build(comptime tag: Tag) type {
         .string => struct { owned: bool, data: []const u8 },
         .bool => struct { owned: bool, data: bool },
         .array => struct { owned: bool, data: []Value },
+        .map => struct { owned: bool, data: std.StringHashMap(Value) },
         .void => struct { owned: bool, data: void },
         .file => struct { owned: bool, data: FileData },
         .directory => struct { owned: bool, data: DirectoryData },
@@ -262,6 +264,7 @@ pub const Value = union(Tag) {
     string: Build(.string),
     bool: Build(.bool),
     array: Build(.array),
+    map: Build(.map),
     void: Build(.void),
     file: Build(.file),
     directory: Build(.directory),
@@ -283,6 +286,7 @@ pub const Value = union(Tag) {
             .directory => init(.directory, .{ .owned = true, .data = try DirectoryData.init(allocator, data) }),
             .path => init(.path, .{ .owned = true, .data = try PathData.init(allocator, data) }),
             .array => Error.ParseValueFailed, // Arrays need special handling
+            .map => Error.ParseValueFailed, // Maps need special handling
         };
     }
 
@@ -296,6 +300,17 @@ pub const Value = union(Tag) {
                     value.deinit(allocator);
                 }
                 allocator.free(array.data);
+            },
+            .map => |m| if (m.owned) {
+                var it = m.data.iterator();
+                while (it.next()) |entry| {
+                    // Free the key
+                    allocator.free(entry.key_ptr.*);
+                    // Free the value
+                    entry.value_ptr.*.deinit(allocator);
+                }
+                var mut_map = m.data;
+                mut_map.deinit();
             },
             .file => |file| if (file.owned) {
                 file.data.deinit(allocator);
@@ -330,6 +345,19 @@ pub const Value = union(Tag) {
                 break :blk init(.array, .{
                     .owned = true,
                     .data = cloned,
+                });
+            },
+            .map => |m| blk: {
+                var new_map = std.StringHashMap(Value).init(allocator);
+                var it = m.data.iterator();
+                while (it.next()) |entry| {
+                    const cloned_value = try entry.value_ptr.*.clone(allocator);
+                    const cloned_key = try allocator.dupe(u8, entry.key_ptr.*);
+                    try new_map.put(cloned_key, cloned_value);
+                }
+                break :blk init(.map, .{
+                    .owned = true,
+                    .data = new_map,
                 });
             },
             .file => |f| init(.file, .{
@@ -531,6 +559,48 @@ pub const Value = union(Tag) {
                 },
                 inline .bool => |value| blk: {
                     try writer.print("{s}\n", .{if (value.data) "true" else "false"});
+                    break :blk init(.void, .{
+                        .owned = false,
+                        .data = {},
+                    });
+                },
+                inline .array => |arr| blk: {
+                    try writer.print("[", .{});
+                    for (arr.data, 0..) |item, i| {
+                        if (i > 0) try writer.print(", ", .{});
+                        switch (item) {
+                            .int => |v| try writer.print("{d}", .{v.data}),
+                            .uint => |v| try writer.print("{d}", .{v.data}),
+                            .float => |v| try writer.print("{d}", .{v.data}),
+                            .string => |s| try writer.print("\"{s}\"", .{s.data}),
+                            .bool => |b| try writer.print("{s}", .{if (b.data) "true" else "false"}),
+                            else => try writer.print("?", .{}),
+                        }
+                    }
+                    try writer.print("]\n", .{});
+                    break :blk init(.void, .{
+                        .owned = false,
+                        .data = {},
+                    });
+                },
+                inline .map => |m| blk: {
+                    try writer.print("{{", .{});
+                    var it = m.data.iterator();
+                    var first = true;
+                    while (it.next()) |entry| {
+                        if (!first) try writer.print(", ", .{});
+                        first = false;
+                        try writer.print("\"{s}\": ", .{entry.key_ptr.*});
+                        switch (entry.value_ptr.*) {
+                            .int => |v| try writer.print("{d}", .{v.data}),
+                            .uint => |v| try writer.print("{d}", .{v.data}),
+                            .float => |v| try writer.print("{d}", .{v.data}),
+                            .string => |s| try writer.print("\"{s}\"", .{s.data}),
+                            .bool => |b| try writer.print("{s}", .{if (b.data) "true" else "false"}),
+                            else => try writer.print("?", .{}),
+                        }
+                    }
+                    try writer.print("}}\n", .{});
                     break :blk init(.void, .{
                         .owned = false,
                         .data = {},
@@ -956,6 +1026,7 @@ pub const Value = union(Tag) {
         .string => []const u8,
         .bool => bool,
         .array => []Value,
+        .map => std.StringHashMap(Value),
         .void => void,
         .file => FileData,
         .directory => DirectoryData,
@@ -971,6 +1042,7 @@ pub const Value = union(Tag) {
             .string => value.string.data,
             .bool => value.bool.data,
             .array => value.array.data,
+            .map => value.map.data,
             .void => value.void.data,
             .file => value.file.data,
             .directory => value.directory.data,

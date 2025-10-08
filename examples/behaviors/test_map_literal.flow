@@ -1,0 +1,1 @@
+map<string, int> : {"age": 30, "count": 5} -> print

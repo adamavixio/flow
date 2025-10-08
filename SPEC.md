@@ -1,7 +1,7 @@
 # Flow Language Specification
 
-**Version**: 0.3.0 (Phase 3c)
-**Last Updated**: 2025-10-07
+**Version**: 0.3.0 (Phase 3c - Maps Complete)
+**Last Updated**: 2025-10-08
 
 ## 1. Introduction
 
@@ -319,16 +319,21 @@ int : 1 <> 2 <> 3 <> 4
 | `last` | array\<T\> | T | `array<int> : [1,2,3] -> last` |
 | `get <index>` | array\<T\> | T | (Phase 3c - planned) |
 
-### Map Operations (Phase 3c - Planned)
+### Map Operations (Phase 3c - In Progress)
 
-| Operation | Input | Output | Example |
-|-----------|-------|--------|---------|
-| `get <key>` | map\<K,V\> | V | `map<string,int> : {...} -> get "age"` |
-| `set <key> <value>` | map\<K,V\> | map\<K,V\> | (creates new map) |
-| `delete <key>` | map\<K,V\> | map\<K,V\> | (creates new map) |
-| `keys` | map\<K,V\> | array\<K\> | Returns all keys |
-| `values` | map\<K,V\> | array\<V\> | Returns all values |
-| `has <key>` | map\<K,V\> | bool | Check if key exists |
+**✅ Completed**: Map literals and printing
+
+**Planned for Phase 3c**:
+
+| Operation | Input | Output | Example | Status |
+|-----------|-------|--------|---------|--------|
+| `print` | map\<K,V\> | void | `map<string,int> : {...} -> print` | ✅ Complete |
+| `get <key>` | map\<K,V\> | V | `map<string,int> : {...} -> get "age"` | 🔲 Planned |
+| `set <key> <value>` | map\<K,V\> | map\<K,V\> | (creates new map) | 🔲 Planned |
+| `delete <key>` | map\<K,V\> | map\<K,V\> | (creates new map) | 🔲 Planned |
+| `keys` | map\<K,V\> | array\<K\> | Returns all keys | 🔲 Planned |
+| `values` | map\<K,V\> | array\<V\> | Returns all values | 🔲 Planned |
+| `has <key>` | map\<K,V\> | bool | Check if key exists | 🔲 Planned |
 
 ### JSON Operations (Phase 3c - Planned)
 
@@ -597,6 +602,32 @@ array<int> : [5, 2, 8, 1, 9]
     -> assert "array has 5 elements"
 ```
 
+### Map Processing (Phase 3c)
+```flow
+# Map literal and printing
+map<string, int> : {"age": 30, "count": 5}
+    -> print
+# Output:
+# {
+#   "age": 30
+#   "count": 5
+# }
+
+# Nested maps
+map<string, map<string, int>> : {
+    "alice": {"age": 30, "score": 95},
+    "bob": {"age": 25, "score": 87}
+}
+    -> print
+
+# Map with array values
+map<string, array<int>> : {
+    "scores": [95, 87, 92],
+    "ages": [25, 30, 35]
+}
+    -> print
+```
+
 ### JSON Processing (Phase 3c)
 ```flow
 # Parse and query JSON
@@ -621,32 +652,43 @@ file : "log1.txt" <> "log2.txt" <> "log3.txt"
 ## 14. Implementation Notes
 
 ### Lexer
-- Table-driven DFA with 19 states
+
+- Table-driven DFA with 19+ states
 - Supports underscore in identifiers
 - Position tracking for error messages
+- Delimiter tokens: `<`, `>`, `[`, `]`, `{`, `}`, `,`
 
 ### Parser
+
 - Recursive descent parser
 - Panic-mode error recovery
 - Reports all syntax errors in one pass
+- Generic type parameter parsing
+- Array and map literal parsing
 
 ### Semantic Analyzer
+
 - Compile-time type checking
 - Dataflow type inference (flow_type tracking)
 - Comprehensive error messages with source locations
+- Type validation for arrays and maps
 
 ### Interpreter
+
 - Direct AST execution
 - Memory-safe value management (Zig allocators)
 - Pipeline-based execution model
+- HashMap-based map implementation (std.StringHashMap)
+- Proper key and value memory management
 
 ## 15. References
 
-- **Main README**: [README.md](../README.md)
-- **Development Goals**: [GOALS.md](./GOALS.md)
-- **Design Decisions**: [DECISIONS.md](./DECISIONS.md)
-- **Change Log**: [CHANGELOG.md](./CHANGELOG.md)
-- **LLM Testing Report**: [LLM.md](./LLM.md)
+- **Main README**: [README.md](./README.md)
+- **Development Goals**: [docs/GOALS.md](./docs/GOALS.md)
+- **Design Decisions**: [docs/DECISIONS.md](./docs/DECISIONS.md)
+- **Change Log**: [docs/CHANGELOG.md](./docs/CHANGELOG.md)
+- **LLM Testing Report**: [docs/LLM.md](./docs/LLM.md)
+- **Design Review**: [docs/REVIEW.md](./docs/REVIEW.md)
 
 ---
 
