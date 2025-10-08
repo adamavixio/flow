@@ -2,12 +2,14 @@
 
 ## Project Documentation
 
-- **[Main README](./README.md)** - User-facing documentation with working examples
-- **[Installation Guide](./INSTALL.md)** - How to install and use Flow (includes LLM usage)
-- **[Development Goals](./docs/GOALS.md)** - Phased roadmap for Flow development
-- **[Design Review](./docs/REVIEW.md)** - Comprehensive analysis of current language architecture
-- **[Design Decisions](./docs/DECISIONS.md)** - Key architectural decisions and rationale
-- **[LLM Testing Report](./docs/LLM.md)** - Real-world testing by Claude Code (Phase 2 validation)
+- **Main README** - See @README.md for user-facing documentation with working examples
+- **Installation Guide** - See @INSTALL.md for how to install and use Flow (includes LLM usage)
+- **Language Specification** - See @docs/SPEC.md for complete language specification and grammar
+- **Development Goals** - See @docs/GOALS.md for phased roadmap for Flow development
+- **Design Review** - See @docs/REVIEW.md for comprehensive analysis of current language architecture
+- **Design Decisions** - See @docs/DECISIONS.md for key architectural decisions and rationale
+- **LLM Testing Report** - See @docs/LLM.md for real-world testing by Claude Code (Phase 2 validation)
+- **Change Log** - See @docs/CHANGELOG.md for detailed change history by phase
 
 ## Vision
 
@@ -32,7 +34,7 @@ array : [3,1,2] -> sort -> print
 - `|` will enable in-place mutations for large data (like `*struct` in Go)
 - Example: `string : huge_text | uppercase` (mutates in place, no copy)
 
-**See [docs/DECISIONS.md#decision-6](./docs/DECISIONS.md) for full rationale.**
+**See @docs/DECISIONS.md for full rationale (Decision 6).**
 
 ### Core Philosophy: Everything is Data Flow
 
@@ -503,8 +505,8 @@ bool : false -> not -> assert "not false is true"
 - YAML/TOML support
 - Nested object access
 - **Defer variables** until we see if they're truly needed
-- See [docs/LLM.md](./docs/LLM.md) for LLM testing insights
-- See [docs/CHANGELOG.md](./docs/CHANGELOG.md) for detailed change history
+- See @docs/LLM.md for LLM testing insights
+- See @docs/CHANGELOG.md for detailed change history
 
 ### Key Implementation Guidelines
 
